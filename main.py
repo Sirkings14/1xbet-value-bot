@@ -19,18 +19,16 @@ TRACKER_FILE = "bet_history.csv"
 SPORTS_TO_SCAN = [
     "soccer_epl",
     "soccer_spain_la_liga",
-    "soccer_germany_bundesliga",
-    "soccer_italy_serie_a",
-    "soccer_france_ligue_one",
     "soccer_uefa_champs_league",
-    "tennis_atp_wimbledon",
-    "basketball_nba"
+    "soccer_usa_mls",
+    "tennis_atp_us_open",
+    "baseball_mlb"
 ]
 
 
 def send_telegram_alert(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram credentials missing. Printing alert locally:")
+        print("Telegram credentials missing. Printing alert locally:")
         print(message)
         return
 
@@ -44,11 +42,11 @@ def send_telegram_alert(message):
     try:
         res = requests.post(url, json=payload)
         if res.status_code == 200:
-            print("📱 Telegram alert sent successfully!")
+            print("Telegram alert sent successfully!")
         else:
-            print(f"❌ Telegram Error: {res.text}")
+            print(f"Telegram Error: {res.text}")
     except Exception as e:
-        print(f"❌ Telegram Connection Error: {e}")
+        print(f"Telegram Connection Error: {e}")
 
 
 def load_sent_cache():
@@ -65,7 +63,7 @@ def save_sent_cache(cache_set):
         df = pd.DataFrame({"alert_id": list(cache_set)})
         df.to_csv(CACHE_FILE, index=False)
     except Exception as e:
-        print(f"⚠️ Cache Save Error: {e}")
+        print(f"Cache Save Error: {e}")
 
 
 def log_bet_tracker(data_dict):
@@ -76,17 +74,36 @@ def log_bet_tracker(data_dict):
         else:
             df = pd.DataFrame([data_dict])
         df.to_csv(TRACKER_FILE, index=False)
-        print("📈 Bet logged to tracking ledger.")
+        print("Bet logged to tracking ledger.")
     except Exception as e:
-        print(f"⚠️ Ledger Logging Error: {e}")
+        print(f"Ledger Logging Error: {e}")
+```
 
+---
 
-def devig_multiplicative(sharp_odds_dict):
-    raw_implied = {k: 1.0 / v for k, v in sharp_odds_dict.items() if v > 1.0}
-    total_margin = sum(raw_implied.values())
-    if total_margin <= 0:
-        return {}
-    return {k: v / total_margin for k, v in raw_implied.items()}
+### PART 2 OF 3 (COPY THIS DIRECTLY BELOW PART 1)
+
+```python
+def devig_shins_method(odds_list):
+    implied_probs = [1.0 / o for o in odds_list if o > 1.0]
+    sum_implied = sum(implied_probs)
+    n = len(implied_probs)
+    
+    if n == 0 or sum_implied <= 0:
+        return []
+
+    z = (sum_implied - 1.0) / (n - 1.0)
+    for _ in range(10):
+        numerator = sum([np.sqrt(z**2 + 4 * (1 - z) * (p**2 / sum_implied)) for p in implied_probs]) - 2.0
+        z = max(0.0001, z - numerator / n)
+
+    fair_probs = []
+    for p in implied_probs:
+        prob = (np.sqrt(z**2 + 4 * (1 - z) * (p / sum_implied)) - z) / (2 * (1 - z))
+        fair_probs.append(prob)
+
+    total_fair = sum(fair_probs)
+    return [p / total_fair for p in fair_probs] if total_fair > 0 else []
 
 
 def calculate_kelly_stake(true_prob, retail_odds, fraction=KELLY_FRACTION):
@@ -132,29 +149,34 @@ def get_dynamic_ev_threshold(commence_time_str):
 
 def format_high_speed_alert(sport_key, home_team, away_team, selection, commence_time, 
                             offered_odds, fair_odds, ev_percent, humanized_stake, is_steam):
-    steam_badge = "🔥 *STEAM MOVE DETECTED* 🔥\n" if is_steam else ""
-    ev_badge = "🚀 *HIGH VALUE OVERLAY*" if ev_percent >= 6.0 else "⚡️ *POSITIVE EV EDGE*"
+    steam_badge = "STEAM MOVE DETECTED\n" if is_steam else ""
+    ev_badge = "HIGH VALUE OVERLAY" if ev_percent >= 6.0 else "POSITIVE EV EDGE"
     
     msg = f"{steam_badge}{ev_badge}\n"
-    msg += f"━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"⚽️ *MATCH:* `{home_team}` vs `{away_team}`\n"
-    msg += f"🎯 *SELECTION:* `{selection}`\n"
-    msg += f"🏆 *SPORT:* `{sport_key.upper().replace('_', ' ')}`\n"
-    msg += f"⏰ *KICKOFF:* `{commence_time} UTC`\n"
-    msg += f"━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"📈 *1xBet Line:* `{offered_odds}x` 👈 *PLACE THIS LINE*\n"
-    msg += f"🎯 *Sharp Fair Odds:* `{fair_odds}x` (De-vigged)\n"
-    msg += f"🔥 *Mathematical EV:* `+{round(ev_percent, 1)}%`\n"
-    msg += f"💰 *Recommended Stake:* `{humanized_stake}`\n"
-    msg += f"━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"📲 *ACTION:* Open 1xBet ➔ Search `{home_team}` ➔ Place `{selection}` @ `{offered_odds}`"
+    msg += f"-------------------\n"
+    msg += f"MATCH: {home_team} vs {away_team}\n"
+    msg += f"SELECTION: {selection}\n"
+    msg += f"SPORT: {sport_key.upper().replace('_', ' ')}\n"
+    msg += f"KICKOFF: {commence_time} UTC\n"
+    msg += f"-------------------\n"
+    msg += f"1xBet Line: {offered_odds}x (PLACE THIS LINE)\n"
+    msg += f"Sharp Fair Odds: {fair_odds}x (Shin De-vigged)\n"
+    msg += f"Mathematical EV: +{round(ev_percent, 1)}%\n"
+    msg += f"Recommended Stake: {humanized_stake}\n"
+    msg += f"-------------------\n"
+    msg += f"ACTION: Open 1xBet -> Search {home_team} -> Place {selection} @ {offered_odds}"
     
     return msg
+```
 
+---
 
+### PART 3 OF 3 (COPY THIS DIRECTLY BELOW PART 2)
+
+```python
 def fetch_and_scan_sport(sport_key, sent_cache):
     if not ODDS_API_KEY:
-        print("❌ Error: ODDS_API_KEY environment variable is missing.")
+        print("Error: ODDS_API_KEY environment variable is missing.")
         return
 
     url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
@@ -168,7 +190,7 @@ def fetch_and_scan_sport(sport_key, sent_cache):
     try:
         res = requests.get(url, params=params)
         if res.status_code != 200:
-            print(f"⚠️ API Warning [{sport_key}]: {res.status_code} - {res.text}")
+            print(f"API Warning [{sport_key}]: {res.status_code} - {res.text}")
             return
 
         events = res.json()
@@ -183,7 +205,7 @@ def fetch_and_scan_sport(sport_key, sent_cache):
             min_ev_required = get_dynamic_ev_threshold(raw_commence)
 
             for market_type in ["h2h", "totals"]:
-                sharp_odds = {}
+                sharp_odds_map = {}
                 retail_odds = {}
 
                 for bookmaker in event.get("bookmakers", []):
@@ -202,24 +224,33 @@ def fetch_and_scan_sport(sport_key, sent_cache):
 
                         if key in ["pinnacle", "betfair_ex_uk", "unibet_eu"]:
                             for name, price in odds_dict.items():
-                                if name not in sharp_odds:
-                                    sharp_odds[name] = []
-                                sharp_odds[name].append(price)
+                                if name not in sharp_odds_map:
+                                    sharp_odds_map[name] = []
+                                sharp_odds_map[name].append(price)
 
                         if key in ["1xbet", "1x", "marathonbet", "bet365"]:
                             for name, price in odds_dict.items():
                                 retail_odds[name] = price
 
-                avg_sharp_line = {k: np.mean(v) for k, v in sharp_odds.items() if len(v) > 0}
-                true_fair_probs = devig_multiplicative(avg_sharp_line)
+                if not sharp_odds_map:
+                    continue
 
-                for outcome_name, true_prob in true_fair_probs.items():
+                outcome_names = list(sharp_odds_map.keys())
+                avg_odds_list = [np.mean(sharp_odds_map[name]) for namein outcome_names]
+
+                if any(o <= 1.0 for o in avg_odds_list) or len(avg_odds_list) < 2:
+                    continue
+
+                fair_probs = devig_shins_method(avg_odds_list)
+
+                for idx, true_prob in enumerate(fair_probs):
+                    outcome_name = outcome_names[idx]
                     if outcome_name not in retail_odds:
                         continue
 
                     offered_1x_odds = retail_odds[outcome_name]
 
-                    if not (MIN_ODDS_CAP<= offered_1x_odds <= MAX_ODDS_CAP):
+                    if not (MIN_ODDS_CAP <= offered_1x_odds <= MAX_ODDS_CAP):
                         continue
 
                     fair_odds = round(1.0 / true_prob, 2)
@@ -256,11 +287,11 @@ def fetch_and_scan_sport(sport_key, sent_cache):
                             })
 
     except Exception as e:
-        print(f"❌ Error scanning {sport_key}: {e}")
+        print(f"Error scanning {sport_key}: {e}")
 
 
 def run_scanner():
-    print("=== STARTING QUANTITATIVE 1XBET +EV ENGINE ===")
+    print("=== STARTING QUANTITATIVE 1XBET +EV ENGINE (SHIN'S MODEL) ===")
     sent_cache = load_sent_cache()
     
     for sport in SPORTS_TO_SCAN:
