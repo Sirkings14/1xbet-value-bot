@@ -1,7 +1,13 @@
-import math
 import unittest
 
-from main import devig_shin, fractional_kelly, normalise_name
+from main import (
+    devig_shin,
+    find_target_price,
+    fractional_kelly,
+    market_groups,
+    normalise_name,
+    should_alert,
+)
 
 
 class EngineTests(unittest.TestCase):
@@ -26,6 +32,27 @@ class EngineTests(unittest.TestCase):
     def test_name_with_point(self):
         self.assertEqual(normalise_name("Over", 2.5), "Over 2.5")
         self.assertEqual(normalise_name("Home"), "Home")
+
+    def test_target_price_prefers_best_1xbet_alias(self):
+        markets = [
+            {"book": "1xbet", "prices": {"Home": 2.20}},
+            {"book": "1x", "prices": {"Home": 2.25}},
+        ]
+        self.assertEqual(find_target_price(markets, "Home"), ("1x", 2.25))
+
+    def test_market_groups_do_not_mix_totals_lines(self):
+        markets = [
+            {"book": "pinnacle", "prices": {"Over 2.5": 2.0, "Under 2.5": 1.8}},
+            {"book": "betfair_ex_uk", "prices": {"Over 3.5": 2.5, "Under 3.5": 1.55}},
+        ]
+        groups = market_groups(markets, "totals")
+        self.assertEqual(len(groups), 2)
+
+    def test_alert_repeats_only_after_material_improvement(self):
+        previous = {"offered_odds": 2.00, "ev_percent": 5.0}
+        self.assertFalse(should_alert(previous, 2.02, 5.5))
+        self.assertTrue(should_alert(previous, 2.05, 5.5))
+        self.assertTrue(should_alert(previous, 2.00, 6.01))
 
 
 if __name__ == "__main__":
