@@ -31,7 +31,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   scan:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/rebuild/value-engine-v2')
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/rebuild/value-engine-v2') && !contains(github.event.head_commit.message, '[skip ci]'))
     needs: test
     runs-on: ubuntu-latest
     permissions:
