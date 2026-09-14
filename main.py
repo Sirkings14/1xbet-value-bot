@@ -19,6 +19,7 @@ MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "2.0"))
 KELLY_FRACTION = float(os.getenv("KELLY_FRACTION", "0.25"))
 MIN_SHARP_BOOKS = int(os.getenv("MIN_SHARP_BOOKS", "2"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
+MAX_EVENT_AGE_MINUTES = float(os.getenv("MAX_EVENT_AGE_MINUTES", "0"))
 
 # Re-alert only when a previously alerted line materially improves.
 RE_ALERT_EV_DELTA = float(os.getenv("RE_ALERT_EV_DELTA", "1.0"))
@@ -43,6 +44,31 @@ TARGET_RETAIL_BOOKS = {"1xbet", "1x"}
 def normalise_name(name, point=None):
     name = str(name).strip()
     return f"{name} {point}" if point is not None else name
+
+
+def parse_event_time(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def is_event_eligible(event, now=None):
+    """Allow only upcoming events, with an optional grace period for bad feeds."""
+    start = parse_event_time(event.get("commence_time"))
+    if start is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    age_minutes = (now - start).total_seconds() / 60.0
+    return age_minutes <= MAX_EVENT_AGE_MINUTES
 
 
 def devig_shin(odds):
@@ -231,8 +257,6 @@ def market_groups(sharp_markets, market_key):
             continue
         if market_key == "h2h" and len(names) > 3:
             continue
-        # For totals, the point is embedded in the outcome name, so a 2.5
-        # line cannot be accidentally combined with a 3.5 line.
         groups.setdefault(names, []).append(snapshot)
     return groups
 
@@ -246,7 +270,6 @@ def find_target_price(retail_markets, selection):
             prices.append((snapshot["book"], price))
     if not prices:
         return None
-    # 1xbet and 1x are aliases seen in feeds; use the best matching target line.
     return max(prices, key=lambda item: item[1])
 
 
@@ -259,6 +282,9 @@ def should_alert(previous, offered, ev):
 
 
 def scan_event(event, sent_cache):
+    if not is_event_eligible(event):
+        return
+
     event_id = event.get("id") or f"{event.get('home_team')}|{event.get('away_team')}|{event.get('commence_time')}"
 
     for market_key in ("h2h", "totals"):
@@ -272,8 +298,6 @@ def scan_event(event, sent_cache):
             if len(unique_books) < MIN_SHARP_BOOKS:
                 continue
 
-            # De-vig each complete sharp market independently, then aggregate
-            # probabilities. This is materially safer than mixing odds first.
             probability_samples = {name: [] for name in outcome_names}
             for snapshot in complete:
                 names = list(outcome_names)
@@ -286,9 +310,7 @@ def scan_event(event, sent_cache):
             if any(len(values) < MIN_SHARP_BOOKS for values in probability_samples.values()):
                 continue
 
-            fair_probs = {
-                name: median(values) for name, values in probability_samples.items()
-            }
+            fair_probs = {name: median(values) for name, values in probability_samples.items()}
             normaliser = sum(fair_probs.values())
             if normaliser <= 0:
                 continue
@@ -315,10 +337,7 @@ def scan_event(event, sent_cache):
                     continue
 
                 fair_odds = 1.0 / probability
-                message = format_alert(
-                    event, market_key, name, offered, fair_odds,
-                    probability, ev, stake, unique_books,
-                )
+                message = format_alert(event, market_key, name, offered, fair_odds, probability, ev, stake, unique_books)
                 if send_telegram(message):
                     sent_cache[alert_id] = {
                         "offered_odds": offered,
