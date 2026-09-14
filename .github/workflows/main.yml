@@ -67,7 +67,11 @@ jobs:
         run: |
           git config user.name "1xBet Value Engine"
           git config user.email "engine@users.noreply.github.com"
-          git add sent_alerts_cache.csv signals.csv clv_snapshots.csv analysis_report.csv
+          for file in sent_alerts_cache.csv signals.csv clv_snapshots.csv analysis_report.csv; do
+            if [ -f "$file" ]; then
+              git add "$file"
+            fi
+          done
           if git diff --cached --quiet; then
             echo "No scanner state or report changes."
             exit 0
