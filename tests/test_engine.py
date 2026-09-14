@@ -1,9 +1,11 @@
 import unittest
+from datetime import datetime, timezone, timedelta
 
 from main import (
     devig_shin,
     find_target_price,
     fractional_kelly,
+    is_event_eligible,
     market_groups,
     normalise_name,
     should_alert,
@@ -53,6 +55,19 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(should_alert(previous, 2.02, 5.5))
         self.assertTrue(should_alert(previous, 2.05, 5.5))
         self.assertTrue(should_alert(previous, 2.00, 6.01))
+
+    def test_stale_event_is_rejected(self):
+        now = datetime(2026, 9, 14, 20, 0, tzinfo=timezone.utc)
+        event = {"commence_time": (now - timedelta(minutes=1)).isoformat()}
+        self.assertFalse(is_event_eligible(event, now=now))
+
+    def test_future_event_is_eligible(self):
+        now = datetime(2026, 9, 14, 20, 0, tzinfo=timezone.utc)
+        event = {"commence_time": (now + timedelta(minutes=1)).isoformat()}
+        self.assertTrue(is_event_eligible(event, now=now))
+
+    def test_malformed_event_time_is_rejected(self):
+        self.assertFalse(is_event_eligible({"commence_time": "not-a-date"}))
 
 
 if __name__ == "__main__":
