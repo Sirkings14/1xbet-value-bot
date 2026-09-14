@@ -1,0 +1,141 @@
+import csv
+from collections import defaultdict
+from pathlib import Path
+
+SIGNALS_FILE = Path("signals.csv")
+REPORT_FILE = Path("analysis_report.csv")
+
+
+def _num(row, key, default=0.0):
+    try:
+        return float(row.get(key, default) or default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def load_signals(path=SIGNALS_FILE):
+    if not Path(path).exists():
+        return []
+    with Path(path).open(newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def settled_rows(rows):
+    return [r for r in rows if str(r.get("status", "")).lower() in {"win", "loss", "push"}]
+
+
+def max_losing_streak(rows):
+    streak = best = 0
+    for row in rows:
+        status = str(row.get("status", "")).lower()
+        if status == "loss":
+            streak += 1
+            best = max(best, streak)
+        elif status in {"win", "push"}:
+            streak = 0
+    return best
+
+
+def summary(rows):
+    settled = settled_rows(rows)
+    wins = sum(str(r.get("status", "")).lower() == "win" for r in settled)
+    losses = sum(str(r.get("status", "")).lower() == "loss" for r in settled)
+    pushes = sum(str(r.get("status", "")).lower() == "push" for r in settled)
+    profit = sum(_num(r, "profit_units") for r in settled)
+    staked = sum(_num(r, "stake_pct") for r in settled)
+    roi = (profit / staked * 100.0) if staked else 0.0
+    return {
+        "signals": len(rows),
+        "settled": len(settled),
+        "wins": wins,
+        "losses": losses,
+        "pushes": pushes,
+        "profit_units": round(profit, 6),
+        "staked_pct_units": round(staked, 6),
+        "roi_percent": round(roi, 4),
+        "win_rate_percent": round(wins / (wins + losses) * 100.0, 4) if wins + losses else 0.0,
+        "max_losing_streak": max_losing_streak(settled),
+        "avg_odds": round(sum(_num(r, "offered_odds") for r in settled) / len(settled), 4) if settled else 0.0,
+        "avg_ev_percent": round(sum(_num(r, "ev_percent") for r in settled) / len(settled), 4) if settled else 0.0,
+        "avg_fair_probability": round(sum(_num(r, "fair_probability") for r in settled) / len(settled), 6) if settled else 0.0,
+    }
+
+
+def _bucket_ev(ev):
+    if ev < 5:
+        return "3-5"
+    if ev < 8:
+        return "5-8"
+    return "8+"
+
+
+def _bucket_odds(odds):
+    if odds < 1.75:
+        return "1.35-1.75"
+    if odds < 2.25:
+        return "1.75-2.25"
+    if odds < 3.0:
+        return "2.25-3.00"
+    return "3.00-4.50"
+
+
+def grouped_report(rows, field, bucket=None):
+    groups = defaultdict(list)
+    for row in settled_rows(rows):
+        value = _num(row, field) if bucket else row.get(field, "unknown") or "unknown"
+        key = bucket(value) if bucket else value
+        groups[key].append(row)
+
+    output = []
+    for key in sorted(groups, key=str):
+        output.append({"group": key, **summary(groups[key])})
+    return output
+
+
+def build_report(rows):
+    sections = []
+    sections.append({"section": "overall", "group": "all", **summary(rows)})
+    for section, field, bucket in [
+        ("sport", "sport", None),
+        ("market", "market", None),
+        ("ev_bucket", "ev_percent", _bucket_ev),
+        ("odds_bucket", "offered_odds", _bucket_odds),
+    ]:
+        for item in grouped_report(rows, field, bucket):
+            sections.append({"section": section, **item})
+    return sections
+
+
+def save_report(report, path=REPORT_FILE):
+    fields = [
+        "section", "group", "signals", "settled", "wins", "losses", "pushes",
+        "profit_units", "staked_pct_units", "roi_percent", "win_rate_percent",
+        "max_losing_streak", "avg_odds", "avg_ev_percent", "avg_fair_probability",
+    ]
+    with Path(path).open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(report)
+
+
+def print_report(report):
+    overall = next((r for r in report if r["section"] == "overall"), None)
+    if not overall:
+        print("No settled signals yet.")
+        return
+    print("=== PAPER-TRADING PERFORMANCE ===")
+    print(f"Settled: {overall['settled']} | W/L/P: {overall['wins']}/{overall['losses']}/{overall['pushes']}")
+    print(f"P/L units: {overall['profit_units']:.4f} | ROI: {overall['roi_percent']:.2f}%")
+    print(f"Win rate: {overall['win_rate_percent']:.2f}% | Max losing streak: {overall['max_losing_streak']}")
+    print(f"Avg odds: {overall['avg_odds']:.3f} | Avg EV: {overall['avg_ev_percent']:.2f}%")
+
+
+def main():
+    rows = load_signals()
+    report = build_report(rows)
+    save_report(report)
+    print_report(report)
+
+
+if __name__ == "__main__":
+    main()
