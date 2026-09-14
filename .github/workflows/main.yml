@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
       - name: Syntax check
-        run: python -m py_compile main.py settle_signals.py analytics.py tests/test_engine.py tests/test_settlement.py tests/test_analytics.py
+        run: python -m py_compile main.py settle_signals.py analytics.py signal_quality.py tests/test_engine.py tests/test_settlement.py tests/test_analytics.py tests/test_signal_quality.py
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
@@ -55,6 +55,8 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python settle_signals.py
+      - name: Validate signal data
+        run: python signal_quality.py
       - name: Generate performance report
         run: python analytics.py
       - name: Persist scanner state and reports
