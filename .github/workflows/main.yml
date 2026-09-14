@@ -31,7 +31,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   scan:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/rebuild/value-engine-v2')
     needs: test
     runs-on: ubuntu-latest
     permissions:
