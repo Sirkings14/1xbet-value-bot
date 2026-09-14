@@ -35,7 +35,9 @@ SPORTS_TO_SCAN = [
     "baseball_mlb",
 ]
 SHARP_BOOKS = {"pinnacle", "betfair_ex_uk", "unibet_eu"}
-TARGET_RETAIL_BOOKS = {"1xbet", "1x"}
+# The Odds API's current EU bookmaker key for 1xBet is `onexbet`.
+# Keep legacy aliases for compatibility with older cached/test data.
+TARGET_RETAIL_BOOKS = {"onexbet", "1xbet", "1x"}
 
 
 def normalise_name(name, point=None):
@@ -353,6 +355,7 @@ def run():
     print("=== 1xBet VALUE ENGINE v2 ===")
     print(f"Telegram configured: {'yes' if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else 'NO'}")
     print(f"Filters: odds {MIN_ODDS:.2f}-{MAX_ODDS:.2f}, EV >= {MIN_EV:.2f}%, sharp books >= {MIN_SHARP_BOOKS}")
+    print(f"Target 1xBet bookmaker keys: {', '.join(sorted(TARGET_RETAIL_BOOKS))}")
     cache = load_cache()
     stats = {}
     total_events = 0
