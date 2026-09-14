@@ -1,0 +1,2 @@
+section,group,signals,settled,wins,losses,pushes,profit_units,staked_pct_units,roi_percent,win_rate_percent,max_losing_streak,max_drawdown_units,brier_score,avg_odds,avg_ev_percent,avg_fair_probability,clv_snapshots,avg_clv_percent,positive_clv_percent
+overall,all,0,0,0,0,0,0,0,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0
