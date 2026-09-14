@@ -1,0 +1,56 @@
+import unittest
+
+from analytics import brier_score, build_report, calibration_buckets, max_drawdown, max_losing_streak, summary
+
+
+class AnalyticsTests(unittest.TestCase):
+    def setUp(self):
+        self.rows = [
+            {"sport": "soccer_epl", "market": "h2h", "status": "win", "profit_units": "1.0", "stake_pct": "1.0", "offered_odds": "2.0", "ev_percent": "5", "fair_probability": "0.55", "settled_at": "2026-09-01T10:00:00"},
+            {"sport": "soccer_epl", "market": "h2h", "status": "loss", "profit_units": "-1.0", "stake_pct": "1.0", "offered_odds": "2.2", "ev_percent": "6", "fair_probability": "0.50", "settled_at": "2026-09-02T10:00:00"},
+            {"sport": "tennis_atp_us_open", "market": "totals", "status": "win", "profit_units": "0.5", "stake_pct": "0.5", "offered_odds": "3.0", "ev_percent": "8.5", "fair_probability": "0.38", "settled_at": "2026-09-03T10:00:00"},
+            {"sport": "tennis_atp_us_open", "market": "totals", "status": "push", "profit_units": "0", "stake_pct": "0.5", "offered_odds": "1.8", "ev_percent": "4", "fair_probability": "0.56", "settled_at": "2026-09-04T10:00:00"},
+        ]
+
+    def test_summary(self):
+        result = summary(self.rows)
+        self.assertEqual(result["settled"], 4)
+        self.assertEqual(result["wins"], 2)
+        self.assertEqual(result["losses"], 1)
+        self.assertEqual(result["pushes"], 1)
+        self.assertAlmostEqual(result["profit_units"], 0.5)
+        self.assertAlmostEqual(result["roi_percent"], 16.6667, places=3)
+
+    def test_losing_streak(self):
+        self.assertEqual(max_losing_streak(self.rows), 1)
+
+    def test_drawdown(self):
+        self.assertAlmostEqual(max_drawdown(self.rows), 1.0)
+
+    def test_brier_score_excludes_pushes(self):
+        expected = ((0.55 - 1.0) ** 2 + (0.50 - 0.0) ** 2 + (0.38 - 1.0) ** 2) / 3
+        self.assertAlmostEqual(brier_score(self.rows), expected, places=6)
+
+    def test_calibration_buckets(self):
+        buckets = calibration_buckets(self.rows)
+        self.assertEqual([row["group"] for row in buckets], ["0.2-0.4", "0.4-0.6"])
+        self.assertEqual(buckets[0]["count"], 1)
+        self.assertAlmostEqual(buckets[0]["actual_win_rate"], 1.0)
+        self.assertAlmostEqual(buckets[1]["avg_predicted"], 0.525)
+
+    def test_report_contains_required_breakdowns(self):
+        report = build_report(self.rows)
+        sections = {row["section"] for row in report}
+        self.assertEqual(sections, {"overall", "sport", "market", "ev_bucket", "odds_bucket"})
+        overall = next(row for row in report if row["section"] == "overall")
+        self.assertIn("max_drawdown_units", overall)
+        self.assertIn("brier_score", overall)
+
+    def test_ev_buckets(self):
+        report = build_report(self.rows)
+        buckets = {row["group"] for row in report if row["section"] == "ev_bucket"}
+        self.assertEqual(buckets, {"3-5", "5-8", "8+"})
+
+
+if __name__ == "__main__":
+    unittest.main()

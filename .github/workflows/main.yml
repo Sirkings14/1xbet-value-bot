@@ -1,38 +1,80 @@
-name: 1xBet +EV Value & Line Lag Scanner
+name: 1xBet Value Engine
 
 on:
   schedule:
-    - cron: '*/30 8-23 * * *'
+    - cron: '*/5 8-23 * * *'
   workflow_dispatch:
+  push:
+    branches: [main, 'rebuild/**']
+
+concurrency:
+  group: 1xbet-value-engine
+  cancel-in-progress: false
 
 jobs:
-  run-scanner:
+  test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Syntax check
+        run: python -m py_compile main.py settle_signals.py analytics.py signal_quality.py clv.py tests/test_engine.py tests/test_settlement.py tests/test_analytics.py tests/test_signal_quality.py tests/test_clv.py
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run Quantitative Scanner Engine
+  scan:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/rebuild/value-engine-v2')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Run value scanner
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py
-
-      - name: Commit & Push Cache & Bet Ledger
+      - name: Capture pre-start CLV
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python clv.py
+      - name: Settle completed signals
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python settle_signals.py
+      - name: Validate signal data
+        run: python signal_quality.py
+      - name: Generate performance report
+        run: python analytics.py
+      - name: Persist scanner state and reports
         run: |
-          git config --global user.name "1xBet Quantitative Engine"
-          git config --global user.email "engine@1xbet-value.com"
-          git add sent_alerts_cache.csv bet_history.csv || exit 0
-          git commit -m "Updated alert cache and tracking ledger [skip ci]" || exit 0
-          git push || exit 0
+          git config user.name "1xBet Value Engine"
+          git config user.email "engine@users.noreply.github.com"
+          for file in sent_alerts_cache.csv signals.csv clv_snapshots.csv analysis_report.csv; do
+            if [ -f "$file" ]; then
+              git add "$file"
+            fi
+          done
+          if git diff --cached --quiet; then
+            echo "No scanner state or report changes."
+            exit 0
+          fi
+          git commit -m "Update scanner state and performance report [skip ci]"
+          git push
