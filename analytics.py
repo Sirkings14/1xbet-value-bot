@@ -24,6 +24,10 @@ def settled_rows(rows):
     return [r for r in rows if str(r.get("status", "")).lower() in {"win", "loss", "push"}]
 
 
+def binary_rows(rows):
+    return [r for r in settled_rows(rows) if str(r.get("status", "")).lower() in {"win", "loss"}]
+
+
 def max_losing_streak(rows):
     streak = best = 0
     for row in rows:
@@ -34,6 +38,60 @@ def max_losing_streak(rows):
         elif status in {"win", "push"}:
             streak = 0
     return best
+
+
+def cumulative_profit(rows):
+    ordered = sorted(rows, key=lambda r: (r.get("settled_at", ""), r.get("signal_id", "")))
+    cumulative = []
+    total = 0.0
+    for row in ordered:
+        total += _num(row, "profit_units")
+        cumulative.append(total)
+    return cumulative
+
+
+def max_drawdown(rows):
+    peak = 0.0
+    drawdown = 0.0
+    for value in cumulative_profit(rows):
+        peak = max(peak, value)
+        drawdown = max(drawdown, peak - value)
+    return round(drawdown, 6)
+
+
+def brier_score(rows):
+    binary = binary_rows(rows)
+    if not binary:
+        return 0.0
+    total = 0.0
+    for row in binary:
+        predicted = min(max(_num(row, "fair_probability"), 0.0), 1.0)
+        actual = 1.0 if str(row.get("status", "")).lower() == "win" else 0.0
+        total += (predicted - actual) ** 2
+    return round(total / len(binary), 6)
+
+
+def calibration_buckets(rows):
+    buckets = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.000001)]
+    output = []
+    for low, high in buckets:
+        selected = []
+        for row in binary_rows(rows):
+            probability = _num(row, "fair_probability")
+            if low <= probability < high:
+                selected.append(row)
+        if not selected:
+            continue
+        predicted = sum(_num(r, "fair_probability") for r in selected) / len(selected)
+        actual = sum(str(r.get("status", "")).lower() == "win" for r in selected) / len(selected)
+        output.append({
+            "group": f"{low:.1f}-{min(high, 1.0):.1f}",
+            "count": len(selected),
+            "avg_predicted": round(predicted, 6),
+            "actual_win_rate": round(actual, 6),
+            "calibration_error": round(abs(predicted - actual), 6),
+        })
+    return output
 
 
 def summary(rows):
@@ -55,6 +113,8 @@ def summary(rows):
         "roi_percent": round(roi, 4),
         "win_rate_percent": round(wins / (wins + losses) * 100.0, 4) if wins + losses else 0.0,
         "max_losing_streak": max_losing_streak(settled),
+        "max_drawdown_units": max_drawdown(settled),
+        "brier_score": brier_score(settled),
         "avg_odds": round(sum(_num(r, "offered_odds") for r in settled) / len(settled), 4) if settled else 0.0,
         "avg_ev_percent": round(sum(_num(r, "ev_percent") for r in settled) / len(settled), 4) if settled else 0.0,
         "avg_fair_probability": round(sum(_num(r, "fair_probability") for r in settled) / len(settled), 6) if settled else 0.0,
@@ -110,7 +170,8 @@ def save_report(report, path=REPORT_FILE):
     fields = [
         "section", "group", "signals", "settled", "wins", "losses", "pushes",
         "profit_units", "staked_pct_units", "roi_percent", "win_rate_percent",
-        "max_losing_streak", "avg_odds", "avg_ev_percent", "avg_fair_probability",
+        "max_losing_streak", "max_drawdown_units", "brier_score", "avg_odds",
+        "avg_ev_percent", "avg_fair_probability",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
@@ -127,6 +188,7 @@ def print_report(report):
     print(f"Settled: {overall['settled']} | W/L/P: {overall['wins']}/{overall['losses']}/{overall['pushes']}")
     print(f"P/L units: {overall['profit_units']:.4f} | ROI: {overall['roi_percent']:.2f}%")
     print(f"Win rate: {overall['win_rate_percent']:.2f}% | Max losing streak: {overall['max_losing_streak']}")
+    print(f"Drawdown: {overall['max_drawdown_units']:.4f} units | Brier: {overall['brier_score']:.4f}")
     print(f"Avg odds: {overall['avg_odds']:.3f} | Avg EV: {overall['avg_ev_percent']:.2f}%")
 
 
