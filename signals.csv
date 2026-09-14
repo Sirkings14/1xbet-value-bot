@@ -1,0 +1,2 @@
+timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_odds,fair_probability,ev_percent,stake_pct,sharp_books,sharp_sample_count,status,profit_units,settled_at
+2026-09-14T23:51:53.717157+00:00,22c9b2c43cbe1334381269550dab78e6,soccer_epl,Manchester United vs Tottenham Hotspur,2026-10-10T16:30:00Z,h2h,Draw,4.41,2.6309,0.380103,67.6253,2.0,2,2,,,
