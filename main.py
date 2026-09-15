@@ -35,7 +35,9 @@ SPORTS_TO_SCAN = [
     "baseball_mlb",
 ]
 SHARP_BOOKS = {"pinnacle", "betfair_ex_uk", "unibet_eu"}
-TARGET_RETAIL_BOOKS = {"1xbet", "1x"}
+# The Odds API currently identifies 1xBet as `onexbet`.
+# Keep legacy aliases so old/local fixtures remain compatible.
+TARGET_RETAIL_BOOKS = {"onexbet", "1xbet", "1x"}
 
 
 def normalise_name(name, point=None):
@@ -80,12 +82,12 @@ def devig_shin(odds):
         return [x / overround for x in q]
 
     def probs(z):
-        result = []
         denom = 1.0 - z
-        for qi in q:
-            radicand = z * z + 4.0 * denom * qi * qi / overround
-            result.append((math.sqrt(max(0.0, radicand)) - z) / (2.0 * denom))
-        return result
+        return [
+            (math.sqrt(max(0.0, z * z + 4.0 * denom * qi * qi / overround)) - z)
+            / (2.0 * denom)
+            for qi in q
+        ]
 
     lo, hi = 0.0, 1.0 - 1e-9
     for _ in range(80):
@@ -124,6 +126,7 @@ def load_cache():
                     state[alert_id] = {
                         "offered_odds": float(row.get("offered_odds", "0") or 0),
                         "ev_percent": float(row.get("ev_percent", "0") or 0),
+                        "updated_at": row.get("updated_at", ""),
                     }
             return state
     except (OSError, ValueError, KeyError, csv.Error):
@@ -147,8 +150,8 @@ def save_cache(cache):
 def append_signal(signal):
     fields = [
         "timestamp", "event_id", "sport", "match", "commence_time", "market", "selection",
-        "offered_odds", "fair_odds", "fair_probability", "ev_percent",
-        "stake_pct", "sharp_books", "sharp_sample_count",
+        "offered_odds", "fair_odds", "fair_probability", "ev_percent", "stake_pct",
+        "sharp_books", "sharp_sample_count",
     ]
     exists = SIGNALS_FILE.exists()
     with SIGNALS_FILE.open("a", newline="", encoding="utf-8") as fh:
@@ -243,22 +246,37 @@ def find_target_price(retail_markets, selection):
 def should_alert(previous, offered, ev):
     if not previous:
         return True
-    return offered >= previous.get("offered_odds", 0) + RE_ALERT_ODDS_DELTA or ev >= previous.get("ev_percent", 0) + RE_ALERT_EV_DELTA
+    return (
+        offered >= previous.get("offered_odds", 0) + RE_ALERT_ODDS_DELTA
+        or ev >= previous.get("ev_percent", 0) + RE_ALERT_EV_DELTA
+    )
 
 
-def scan_event(event, sent_cache):
+def scan_event(event, sent_cache, stats=None):
+    stats = stats if stats is not None else {}
     if not is_event_eligible(event) or event.get("completed") is True:
+        stats["ineligible_or_completed"] = stats.get("ineligible_or_completed", 0) + 1
         return
+    stats["eligible"] = stats.get("eligible", 0) + 1
     event_id = event.get("id") or f"{event.get('home_team')}|{event.get('away_team')}|{event.get('commence_time')}"
+
     for market_key in ("h2h", "totals"):
         sharp_markets, retail_markets = extract_bookmaker_markets(event, market_key)
+        if retail_markets:
+            stats["events_with_retail"] = stats.get("events_with_retail", 0) + 1
+            stats["retail_markets"] = stats.get("retail_markets", 0) + len(retail_markets)
         if not sharp_markets or not retail_markets:
+            if retail_markets and not sharp_markets:
+                stats["no_sharp_markets"] = stats.get("no_sharp_markets", 0) + 1
             continue
+
         for outcome_names, snapshots in market_groups(sharp_markets, market_key).items():
             complete = [s for s in snapshots if outcome_names.issubset(s["prices"])]
             unique_books = {s["book"] for s in complete}
             if len(unique_books) < MIN_SHARP_BOOKS:
+                stats["insufficient_sharp_books"] = stats.get("insufficient_sharp_books", 0) + 1
                 continue
+
             probability_samples = {name: [] for name in outcome_names}
             for snapshot in complete:
                 names = list(outcome_names)
@@ -269,47 +287,68 @@ def scan_event(event, sent_cache):
                     probability_samples[name].append(probability)
             if any(len(values) < MIN_SHARP_BOOKS for values in probability_samples.values()):
                 continue
+
             fair_probs = {name: median(values) for name, values in probability_samples.items()}
             normaliser = sum(fair_probs.values())
             if normaliser <= 0:
                 continue
             fair_probs = {name: p / normaliser for name, p in fair_probs.items()}
+
             for name, probability in fair_probs.items():
                 target = find_target_price(retail_markets, name)
                 if target is None:
                     continue
-                _, offered = target
+                retail_book, offered = target
+                stats["retail_prices_checked"] = stats.get("retail_prices_checked", 0) + 1
                 if not MIN_ODDS <= offered <= MAX_ODDS:
+                    stats["odds_out_of_range"] = stats.get("odds_out_of_range", 0) + 1
                     continue
                 ev = (probability * offered - 1.0) * 100.0
                 if ev < MIN_EV:
+                    stats["ev_below_threshold"] = stats.get("ev_below_threshold", 0) + 1
                     continue
                 stake = fractional_kelly(probability, offered)
                 if stake <= 0:
                     continue
+
+                stats["qualified_signals"] = stats.get("qualified_signals", 0) + 1
                 alert_id = f"{event_id}|{market_key}|{name}"
-                if not should_alert(sent_cache.get(alert_id), offered, ev):
-                    continue
                 fair_odds = 1.0 / probability
+                timestamp = datetime.now(timezone.utc).isoformat()
+
+                # Persist the research signal independently of Telegram delivery.
+                # This prevents a Telegram outage from deleting useful observations.
+                append_signal({
+                    "timestamp": timestamp,
+                    "event_id": event_id,
+                    "sport": event.get("sport_key", ""),
+                    "match": f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
+                    "commence_time": event.get("commence_time", ""),
+                    "market": market_key,
+                    "selection": name,
+                    "offered_odds": round(offered, 4),
+                    "fair_odds": round(fair_odds, 4),
+                    "fair_probability": round(probability, 6),
+                    "ev_percent": round(ev, 4),
+                    "stake_pct": stake,
+                    "sharp_books": len(unique_books),
+                    "sharp_sample_count": len(complete),
+                })
+
+                if not should_alert(sent_cache.get(alert_id), offered, ev):
+                    stats["suppressed_duplicate_or_small_move"] = stats.get("suppressed_duplicate_or_small_move", 0) + 1
+                    continue
+
                 message = format_alert(event, market_key, name, offered, fair_odds, probability, ev, stake, unique_books)
                 if send_telegram(message):
-                    sent_cache[alert_id] = {"offered_odds": offered, "ev_percent": ev, "updated_at": datetime.now(timezone.utc).isoformat()}
-                    append_signal({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "event_id": event_id,
-                        "sport": event.get("sport_key", ""),
-                        "match": f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
-                        "commence_time": event.get("commence_time", ""),
-                        "market": market_key,
-                        "selection": name,
-                        "offered_odds": round(offered, 4),
-                        "fair_odds": round(fair_odds, 4),
-                        "fair_probability": round(probability, 6),
-                        "ev_percent": round(ev, 4),
-                        "stake_pct": stake,
-                        "sharp_books": len(unique_books),
-                        "sharp_sample_count": len(complete),
-                    })
+                    stats["telegram_sent"] = stats.get("telegram_sent", 0) + 1
+                    sent_cache[alert_id] = {
+                        "offered_odds": offered,
+                        "ev_percent": ev,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                else:
+                    stats["telegram_failed"] = stats.get("telegram_failed", 0) + 1
 
 
 def fetch_sport(sport_key):
@@ -317,7 +356,12 @@ def fetch_sport(sport_key):
         raise RuntimeError("ODDS_API_KEY is not configured")
     response = requests.get(
         f"{ODDS_API_BASE}/sports/{sport_key}/odds/",
-        params={"apiKey": ODDS_API_KEY, "regions": "eu,uk", "markets": "h2h,totals", "oddsFormat": "decimal"},
+        params={
+            "apiKey": ODDS_API_KEY,
+            "regions": "eu,uk",
+            "markets": "h2h,totals",
+            "oddsFormat": "decimal",
+        },
         timeout=REQUEST_TIMEOUT,
     )
     response.raise_for_status()
@@ -326,7 +370,11 @@ def fetch_sport(sport_key):
 
 def run():
     print("=== 1xBet VALUE ENGINE v2 ===")
+    print(f"Telegram configured: {'yes' if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else 'no'}")
+    print(f"Target 1xBet bookmaker keys: {', '.join(sorted(TARGET_RETAIL_BOOKS))}")
+    print(f"Filters: odds {MIN_ODDS:.2f}-{MAX_ODDS:.2f}, EV >= {MIN_EV:.2f}%, sharp books >= {MIN_SHARP_BOOKS}")
     cache = load_cache()
+    stats = {}
     total_events = 0
     for sport in SPORTS_TO_SCAN:
         try:
@@ -334,12 +382,20 @@ def run():
             total_events += len(events)
             print(f"{sport}: {len(events)} events")
             for event in events:
-                scan_event(event, cache)
+                scan_event(event, cache, stats)
         except requests.RequestException as exc:
             print(f"{sport}: API error: {exc}")
         except Exception as exc:
             print(f"{sport}: scanner error: {exc}")
     save_cache(cache)
+    print("=== DIAGNOSTICS ===")
+    for key in (
+        "eligible", "ineligible_or_completed", "events_with_retail", "retail_markets",
+        "retail_prices_checked", "no_sharp_markets", "insufficient_sharp_books",
+        "odds_out_of_range", "ev_below_threshold", "qualified_signals",
+        "suppressed_duplicate_or_small_move", "telegram_sent", "telegram_failed",
+    ):
+        print(f"{key}: {stats.get(key, 0)}")
     print(f"=== COMPLETE: {total_events} events scanned ===")
 
 
