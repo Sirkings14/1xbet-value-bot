@@ -50,6 +50,32 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python telegram_healthcheck.py
+      - name: Send one-time Telegram delivery test
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[telegram-test]') }}
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+
+          token = os.environ["TELEGRAM_TOKEN"]
+          chat_id = os.environ["TELEGRAM_CHAT_ID"]
+          response = requests.post(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              json={
+                  "chat_id": chat_id,
+                  "text": "TELEGRAM DELIVERY TEST\n--------------------\nThe 1xBet Value Engine notification path is working.\nThis is a system test — no betting signal."
+              },
+              timeout=20,
+          )
+          response.raise_for_status()
+          payload = response.json()
+          if not payload.get("ok"):
+              raise RuntimeError(payload)
+          print("TELEGRAM_TEST: message delivered successfully")
+          PY
       - name: Run value scanner
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
