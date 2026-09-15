@@ -1,2 +1,4 @@
 timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_odds,fair_probability,ev_percent,stake_pct,sharp_books,sharp_sample_count,status,profit_units,settled_at
 2026-09-14T23:51:53.717157+00:00,22c9b2c43cbe1334381269550dab78e6,soccer_epl,Manchester United vs Tottenham Hotspur,2026-10-10T16:30:00Z,h2h,Draw,4.41,2.6309,0.380103,67.6253,2.0,2,2,,,
+2026-09-15T13:20:19.779647+00:00,da3d3fec3e0b6b939910427a76ecfb76,soccer_spain_la_liga,Espanyol vs Elche CF,2026-09-18T19:00:00Z,h2h,Espanyol,1.96,1.9007,0.526134,3.1222,0.813,2,2,,,
+2026-09-15T13:20:20.260295+00:00,5866dae1e72b96ab74508039cd3dcca7,soccer_spain_la_liga,Atlético Madrid vs Real Madrid,2026-09-20T14:15:00Z,h2h,Draw,4.08,3.9584,0.252627,3.0719,0.249,2,2,,,
