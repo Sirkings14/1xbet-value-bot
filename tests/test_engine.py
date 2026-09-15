@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from main import (
+    TARGET_RETAIL_BOOKS,
     devig_shin,
     find_target_price,
     fractional_kelly,
@@ -41,6 +42,11 @@ class EngineTests(unittest.TestCase):
             {"book": "1x", "prices": {"Home": 2.25}},
         ]
         self.assertEqual(find_target_price(markets, "Home"), ("1x", 2.25))
+
+    def test_onexbet_is_supported_retail_key(self):
+        self.assertIn("onexbet", TARGET_RETAIL_BOOKS)
+        markets = [{"book": "onexbet", "prices": {"Home": 2.30}}]
+        self.assertEqual(find_target_price(markets, "Home"), ("onexbet", 2.30))
 
     def test_market_groups_do_not_mix_totals_lines(self):
         markets = [
