@@ -2,3 +2,7 @@ timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_
 2026-09-14T23:51:53.717157+00:00,22c9b2c43cbe1334381269550dab78e6,soccer_epl,Manchester United vs Tottenham Hotspur,2026-10-10T16:30:00Z,h2h,Draw,4.41,2.6309,0.380103,67.6253,2.0,2,2,,,
 2026-09-15T13:20:19.779647+00:00,da3d3fec3e0b6b939910427a76ecfb76,soccer_spain_la_liga,Espanyol vs Elche CF,2026-09-18T19:00:00Z,h2h,Espanyol,1.96,1.9007,0.526134,3.1222,0.813,2,2,,,
 2026-09-15T13:20:20.260295+00:00,5866dae1e72b96ab74508039cd3dcca7,soccer_spain_la_liga,Atlético Madrid vs Real Madrid,2026-09-20T14:15:00Z,h2h,Draw,4.08,3.9584,0.252627,3.0719,0.249,2,2,,,
+2026-10-01T02:12:34.346895+00:00,02e6c0ccb11bb7ce78989ce49d67110b,soccer_epl,Aston Villa vs Brentford,2026-10-10T14:00:00Z,h2h,Brentford,2.79,2.7084,0.369225,3.0138,0.421,2,2,,,
+2026-10-01T02:12:35.206962+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Draw,3.58,3.4249,0.29198,4.5289,0.439,2,2,,,
+2026-10-01T02:12:36.105870+00:00,4c7f87780ae5ab8bec9e83d6d6ec9909,soccer_uefa_champs_league,Real Betis vs Porto,2026-10-14T19:00:00Z,h2h,Porto,3.48,3.3666,0.297039,3.3695,0.34,2,2,,,
+2026-10-01T02:12:36.785160+00:00,0d9ff865c4599c72a746da08260279b3,soccer_usa_mls,Chicago Fire vs Vancouver Whitecaps FC,2026-10-07T00:30:00Z,h2h,Chicago Fire,2.92,2.5177,0.397192,15.9802,2.0,2,2,,,
