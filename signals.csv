@@ -6,3 +6,5 @@ timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_
 2026-10-01T02:12:35.206962+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Draw,3.58,3.4249,0.29198,4.5289,0.439,2,2,,,
 2026-10-01T02:12:36.105870+00:00,4c7f87780ae5ab8bec9e83d6d6ec9909,soccer_uefa_champs_league,Real Betis vs Porto,2026-10-14T19:00:00Z,h2h,Porto,3.48,3.3666,0.297039,3.3695,0.34,2,2,,,
 2026-10-01T02:12:36.785160+00:00,0d9ff865c4599c72a746da08260279b3,soccer_usa_mls,Chicago Fire vs Vancouver Whitecaps FC,2026-10-07T00:30:00Z,h2h,Chicago Fire,2.92,2.5177,0.397192,15.9802,2.0,2,2,,,
+2026-10-02T00:02:31.846875+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Valencia,3.62,2.888,0.346264,25.3474,2.0,2,2,,,
+2026-10-02T00:02:32.345422+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Draw,3.58,2.829,0.353479,26.5455,2.0,2,2,,,
