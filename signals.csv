@@ -9,3 +9,4 @@ timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_
 2026-10-02T00:02:31.846875+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Valencia,3.62,2.888,0.346264,25.3474,2.0,2,2,,,
 2026-10-02T00:02:32.345422+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Draw,3.58,2.829,0.353479,26.5455,2.0,2,2,,,
 2026-10-02T14:36:26.672176+00:00,5a1a6a04c5561897741105e30d5d7ec4,soccer_uefa_champs_league,Manchester City vs Paris Saint Germain,2026-10-14T19:00:00Z,h2h,Paris Saint Germain,2.97,2.8775,0.347522,3.214,0.408,2,2,,,
+2026-10-03T13:11:38.483008+00:00,2b0a946cac613732fcbf57ce931490a1,soccer_uefa_champs_league,RC Lens vs Sporting Lisbon,2026-10-13T16:45:00Z,h2h,Sporting Lisbon,2.78,2.6719,0.374266,4.046,0.568,2,2,,,
