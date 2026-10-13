@@ -29,6 +29,7 @@ class SettlementTests(unittest.TestCase):
         self.signal = {
             "event_id": "evt-1",
             "match": "Home FC vs Away FC",
+            "commence_time": "2026-10-12T16:30:00+00:00",
             "market": "h2h",
             "selection": "Home FC",
             "offered_odds": "2.10",
@@ -151,6 +152,16 @@ class SettlementTests(unittest.TestCase):
         self.assertTrue(manual_result_matches_signal(self.signal, self.manual))
         wrong = dict(self.manual, away_team="Different FC")
         self.assertFalse(manual_result_matches_signal(self.signal, wrong))
+
+    def test_manual_result_verification_must_follow_kickoff(self):
+        signal = dict(self.signal, commence_time="2026-10-14T16:30:00+00:00")
+        rows = settle_rows(
+            [signal],
+            {},
+            {"evt-1": self.manual},
+            now=datetime(2026, 10, 15, 7, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(rows[0]["status"], "")
 
     def test_verified_manual_result_settles_pending_signal_with_provenance(self):
         now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
