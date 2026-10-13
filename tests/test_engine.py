@@ -1,14 +1,28 @@
+import csv
+import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timezone, timedelta
+from io import StringIO
+from pathlib import Path
+from unittest.mock import patch
+
+import main as engine
 
 from main import (
+    append_signal,
+    build_signal_id,
     devig_shin,
     find_target_price,
     fractional_kelly,
     is_event_eligible,
     market_groups,
+    market_is_fresh,
     normalise_name,
+    probability_spread_pp,
+    send_telegram,
     should_alert,
+    unique_book_snapshots,
     valid_market_signature,
 )
 
@@ -69,6 +83,83 @@ class EngineTests(unittest.TestCase):
     def test_totals_signature_requires_over_and_under(self):
         self.assertTrue(valid_market_signature("soccer_epl", "totals", {"Over 2.5", "Under 2.5"}))
         self.assertFalse(valid_market_signature("soccer_epl", "totals", {"Over 2.5", "Over 3.5"}))
+
+    def test_duplicate_book_observations_are_excluded(self):
+        outcomes = {"Home FC", "Draw", "Away FC"}
+        snapshots = [
+            {"book": "pinnacle", "prices": {"Home FC": 2.0, "Draw": 3.0, "Away FC": 4.0}},
+            {"book": "pinnacle", "prices": {"Home FC": 2.1, "Draw": 3.0, "Away FC": 3.9}},
+            {"book": "betfair_ex_uk", "prices": {"Home FC": 2.0, "Draw": 3.0, "Away FC": 4.0}},
+        ]
+        unique, duplicates = unique_book_snapshots(snapshots, outcomes)
+        self.assertEqual([row["book"] for row in unique], ["betfair_ex_uk"])
+        self.assertEqual(duplicates, ["pinnacle"])
+
+    def test_probability_spread_is_reported_in_percentage_points(self):
+        samples = {"Home": [0.50, 0.54], "Away": [0.50, 0.46]}
+        self.assertAlmostEqual(probability_spread_pp(samples), 4.0)
+
+    def test_market_freshness_requires_recent_timestamp(self):
+        now = datetime(2026, 10, 13, 6, 0, tzinfo=timezone.utc)
+        self.assertTrue(market_is_fresh(
+            {"last_update": (now - timedelta(minutes=5)).isoformat()}, now=now
+        ))
+        self.assertFalse(market_is_fresh(
+            {"last_update": (now - timedelta(minutes=20)).isoformat()}, now=now
+        ))
+        self.assertFalse(market_is_fresh({}, now=now))
+
+    def test_signal_id_is_stable_and_price_sensitive(self):
+        first = build_signal_id("evt-1", "h2h", "Home FC", 2.10, 0.50)
+        same = build_signal_id("evt-1", "h2h", "Home FC", 2.10, 0.50)
+        changed = build_signal_id("evt-1", "h2h", "Home FC", 2.15, 0.50)
+        self.assertEqual(first, same)
+        self.assertNotEqual(first, changed)
+
+    def test_append_signal_migrates_schema_and_deduplicates_retries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "signals.csv"
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["timestamp", "event_id", "status"])
+                writer.writeheader()
+                writer.writerow({"timestamp": "2026-10-01T00:00:00+00:00", "event_id": "old-event", "status": ""})
+
+            row = {
+                "timestamp": "2026-10-13T06:00:00+00:00",
+                "event_id": "evt-1",
+                "sport": "soccer_epl",
+                "market": "h2h",
+                "selection": "Home FC",
+                "offered_odds": 2.1,
+                "fair_odds": 2.0,
+                "fair_probability": 0.5,
+                "ev_percent": 5.0,
+                "stake_pct": 0.5,
+                "sharp_books": 2,
+                "sharp_sample_count": 2,
+                "signal_id": "abc123",
+                "target_book": "onexbet",
+                "sharp_book_keys": "betfair_ex_uk|pinnacle",
+                "sharp_probability_spread_pp": 1.2,
+            }
+            self.assertTrue(append_signal(row, path=path))
+            self.assertFalse(append_signal(row, path=path))
+            with path.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                saved = list(reader)
+                self.assertIn("signal_id", reader.fieldnames)
+                self.assertIn("target_book", reader.fieldnames)
+            self.assertEqual(len(saved), 2)
+            self.assertEqual(saved[0]["event_id"], "old-event")
+            self.assertEqual(saved[1]["signal_id"], "abc123")
+
+    def test_missing_telegram_configuration_is_not_reported_as_delivery(self):
+        output = StringIO()
+        with patch.object(engine, "TELEGRAM_TOKEN", None), patch.object(engine, "TELEGRAM_CHAT_ID", None):
+            with redirect_stdout(output):
+                result = send_telegram("test alert")
+        self.assertIsNone(result)
+        self.assertIn("not configured", output.getvalue().lower())
 
     def test_alert_repeats_only_after_material_improvement(self):
         previous = {"offered_odds": 2.00, "ev_percent": 5.0}
