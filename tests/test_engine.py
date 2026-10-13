@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import main as engine
 
+from signal_quality import validate_file
+
 from main import (
     append_signal,
     build_signal_id,
@@ -208,6 +210,49 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(stats.get("signals_recorded"), 1)
         self.assertEqual(stats.get("telegram_not_configured"), 1)
         self.assertIn("evt-signal|h2h|Home FC", cache)
+
+    def test_totals_scan_preserves_quote_timestamps_and_passes_quality_gate(self):
+        now = datetime.now(timezone.utc)
+        updated = now.isoformat()
+        event = {
+            "id": "evt-totals-timestamp",
+            "sport_key": "soccer_epl",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "commence_time": (now + timedelta(hours=2)).isoformat(),
+        }
+        sharp = [
+            {"book": "pinnacle", "last_update": updated, "prices": {
+                "Over 2.5": 1.91, "Under 2.5": 1.91,
+            }},
+            {"book": "betfair_ex_uk", "last_update": updated, "prices": {
+                "Over 2.5": 1.90, "Under 2.5": 1.92,
+            }},
+        ]
+        retail = [{"book": "onexbet", "last_update": updated, "prices": {
+            "Over 2.5": 2.50, "Under 2.5": 1.55,
+        }}]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "signals.csv"
+            stats, cache = {}, {}
+            with patch.object(engine, "SIGNALS_FILE", path):
+                with patch.object(engine, "extract_bookmaker_markets", side_effect=[([], []), (sharp, retail)]):
+                    with patch.object(engine, "send_telegram", return_value=None):
+                        engine.scan_event(event, cache, stats)
+
+            with path.open("r", newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["market"], "totals")
+            self.assertEqual(rows[0]["selection"], "Over 2.5")
+            self.assertEqual(rows[0]["target_quote_updated_at"], updated)
+            self.assertEqual(
+                rows[0]["sharp_quote_timestamps"],
+                f"betfair_ex_uk={updated}|pinnacle={updated}",
+            )
+            self.assertEqual(stats.get("signals_recorded"), 1)
+            self.assertEqual(validate_file(path), [])
 
     def test_scan_rejects_signals_when_sharp_books_disagree_too_much(self):
         now = datetime.now(timezone.utc)
