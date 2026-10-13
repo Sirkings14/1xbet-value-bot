@@ -103,6 +103,8 @@ def validate_row(row: dict[str, str], row_number: int) -> list[str]:
     if signal_id:
         if not SIGNAL_ID_RE.fullmatch(signal_id):
             errors.append(f"row {row_number}: signal_id must be a 24-character lowercase hex ID")
+        if not _text(row, "signal_version"):
+            errors.append(f"row {row_number}: identified signal requires signal_version")
         if not _text(row, "target_book"):
             errors.append(f"row {row_number}: identified signal requires target_book")
         if not _valid_timestamp(_text(row, "target_quote_updated_at")):
