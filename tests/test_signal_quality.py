@@ -110,6 +110,8 @@ class SignalQualityTests(unittest.TestCase):
 
     def test_identified_settled_signal_requires_settlement_provenance(self):
         row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
         row.update({
             "signal_id": "d" * 24,
             "target_book": "onexbet",
