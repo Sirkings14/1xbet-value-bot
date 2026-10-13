@@ -20,6 +20,10 @@ class SignalQualityTests(unittest.TestCase):
             "stake_pct": "1.25",
             "sharp_books": "3",
             "sharp_sample_count": "3",
+            "signal_version": "signal-integrity-v1",
+            "target_quote_updated_at": "2026-10-13T06:00:00+00:00",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle|unibet_eu",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00|unibet_eu=2026-10-13T05:59:45+00:00",
             "status": "",
             "profit_units": "",
             "settled_at": "",
@@ -27,6 +31,89 @@ class SignalQualityTests(unittest.TestCase):
 
     def test_valid_row_passes(self):
         self.assertEqual(validate_row(self.valid_row(), 2), [])
+
+    def test_signal_provenance_fields_are_validated(self):
+        row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
+        row.update({
+            "signal_id": "a" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+            "sharp_probability_spread_pp": "2.5",
+        })
+        self.assertEqual(validate_row(row, 2), [])
+
+        row["sharp_book_keys"] = "pinnacle|pinnacle"
+        errors = validate_row(row, 2)
+        self.assertTrue(any("unique sharp_book_keys" in error for error in errors))
+
+    def test_identified_signal_requires_version_label(self):
+        row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
+        row.update({
+            "signal_id": "f" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+            "sharp_probability_spread_pp": "1.2",
+        })
+        row["signal_version"] = ""
+        errors = validate_row(row, 2)
+        self.assertTrue(any("signal_version" in error for error in errors))
+
+    def test_signal_requires_source_quote_timestamps(self):
+        row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
+        row.update({
+            "signal_id": "e" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+            "sharp_probability_spread_pp": "1.2",
+        })
+        row["target_quote_updated_at"] = ""
+        errors = validate_row(row, 2)
+        self.assertTrue(any("target_quote_updated_at" in error for error in errors))
+
+    def test_signal_with_excessive_probability_disagreement_is_rejected(self):
+        row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
+        row.update({
+            "signal_id": "b" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+            "sharp_probability_spread_pp": "9.5",
+        })
+        errors = validate_row(row, 2)
+        self.assertTrue(any("probability spread exceeds" in error for error in errors))
+
+    def test_duplicate_signal_ids_are_rejected_in_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "signals.csv"
+            row = self.valid_row()
+            row["sharp_books"] = "2"
+            row["sharp_sample_count"] = "2"
+            row.update({
+                "signal_id": "c" * 24,
+                "target_book": "onexbet",
+                "sharp_book_keys": "betfair_ex_uk|pinnacle",
+                "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+                "sharp_probability_spread_pp": "1.0",
+            })
+            fields = list(row)
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerow(row)
+                writer.writerow(row)
+            errors = validate_file(path)
+            self.assertTrue(any("duplicate signal_id" in error for error in errors))
 
     def test_impossible_odds_rejected(self):
         row = self.valid_row()
@@ -57,6 +144,28 @@ class SignalQualityTests(unittest.TestCase):
         row["market"] = "totals"
         row["selection"] = "Over"
         self.assertTrue(any("totals selection" in e for e in validate_row(row, 2)))
+
+    def test_identified_settled_signal_requires_settlement_provenance(self):
+        row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
+        row.update({
+            "signal_id": "d" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+            "sharp_probability_spread_pp": "1.2",
+            "status": "win",
+            "profit_units": "1.0",
+            "settled_at": "2026-10-13T06:00:00+00:00",
+            "settlement_method": "manual_verified",
+            "settlement_source": "Official results",
+            "settlement_source_url": "https://example.com/results",
+            "settlement_verified_at": "2026-10-13T05:55:00+00:00",
+        })
+        self.assertEqual(validate_row(row, 2), [])
+        row["settlement_source_url"] = "javascript:bad()"
+        self.assertTrue(any("http(s) source URL" in error for error in validate_row(row, 2)))
 
     def test_valid_push_row_passes(self):
         row = self.valid_row()

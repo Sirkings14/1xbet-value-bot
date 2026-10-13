@@ -30,11 +30,19 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Uses median sharp-book consensus instead of a simple mean.
 - Requires at least two complete sharp-book observations for a signal.
 - Keeps different market/line signatures separate so incomplete books are not mixed together.
-- Stable signal IDs no longer include the current 1xBet odds, preventing duplicate signals when prices move.
+- Separates each totals line into its own Over/Under market and rejects incomplete soccer 1X2 outcome sets.
+- Requires a recent market-source timestamp and rejects missing/stale market quotes.
+- Uses at most one observation per sharp bookmaker; duplicate observations from one book are excluded.
+- Rejects signals when sharp-book probability estimates disagree by more than the configurable spread guard.
+- Persists a stable signal ID and source-book provenance before attempting Telegram delivery, with CSV schema migration and retry-safe deduplication.
+- Logs the target bookmaker, the target quote update timestamp, each sharp-book quote timestamp, source-book keys, and inter-book probability spread for later audits.
+- Tags new records as `signal-integrity-v1`; legacy records lacking a version are grouped as `legacy_unknown` and reported separately.
+- Performance reports show signal-version cohorts independently, including their pending and overdue counts; older records with no version are grouped as `legacy_unknown`, not conflated with the upgraded engine cohort.
+- Alert-suppression IDs stay stable across price moves; ledger signal IDs are snapshot-specific and include the offered odds and estimated probability so identical retries are deduplicated without erasing materially changed snapshots.
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
 - Added persistent `signals.csv` research logging.
-- Added pre-start CLV snapshots in `clv_snapshots.csv`.
+- Added pre-start CLV snapshots in `clv_snapshots.csv`, benchmarked against the median of fresh sharp-book odds rather than the later 1xBet price.
 - Added paper settlement from completed-event scores in `settle_signals.py`.
 - Added data-integrity validation in `signal_quality.py`.
 - Added performance analytics including ROI, drawdown, losing streak, Brier score, calibration, EV/odds/sport/market breakdowns, and CLV.
@@ -53,13 +61,15 @@ The bot is deliberately an **alert and evaluation engine**. It does not log in t
 - `MAX_STAKE_PCT=2.0` percent
 - `KELLY_FRACTION=0.25`
 - `MIN_SHARP_BOOKS=2`
+- `MAX_SHARP_PROB_SPREAD_PP=8.0` (initial heuristic guard; not optimized on outcome data)
+- `MAX_MARKET_AGE_SECONDS=900` (15-minute maximum source-market age)
 - `REQUEST_TIMEOUT=20` seconds
 - `MAX_EVENT_AGE_MINUTES=0` (future events only by default)
 - `RE_ALERT_EV_DELTA=1.0` percentage point
 - `RE_ALERT_ODDS_DELTA=0.05`
 - `CLV_MINUTES_BEFORE_START=10`
 
-These defaults are intentionally conservative. They should be changed only after measured paper-trading evidence supports the change.
+The 8-percentage-point disagreement cap is a configurable initial guardrail, not a validated optimum. The 15-minute quote-age cap follows a conservative market freshness policy. Measure rejection counts and CLV before tuning either setting. These defaults do not establish profitability.
 
 ## GitHub Actions setup
 
@@ -69,24 +79,42 @@ Required repository secrets:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-The scheduled workflow runs the test gate first. Only after tests pass does it run the scanner, capture pre-start CLV, settle completed signals, validate the resulting ledger, and generate the performance report.
+The odds workflow runs the test gate first. Only after tests pass does it run the scanner, capture pre-start CLV, validate the ledger, and generate the performance report. A separate workflow settles pending events and refreshes analytics every six hours (and can be run manually), keeping score requests out of each odds scan.
 
-The scanner schedule currently polls every five minutes during the configured UTC window. GitHub Actions scheduling can be delayed, so a CLV snapshot is a reference point rather than a guaranteed official bookmaker closing price.
+The odds scanner polls every ten minutes from 08:00 through 23:59 UTC. It requests only four bookmakers used by this model: Pinnacle, Betfair Exchange UK, Unibet EU, and 1xBet (`onexbet`). The Odds API treats up to ten requested bookmakers as one region-equivalent for quota costing; with two markets, this is at most 2 credits per sport request. With six sports, the scheduled window produces up to about 34,560 odds credits per 30-day month if both markets are returned for every sport on every scan. Actual usage can be lower when markets are unavailable. The separately scheduled settlement/report workflow runs every six hours and queries only sports with pending signals; at six sports continuously pending, that is at most about 1,440 score credits per 30-day month. CLV usage varies with signals inside the pre-start capture window. The scanner logs provider quota headers (`x-requests-last`, `x-requests-used`, and `x-requests-remaining`) so real consumption can be checked in GitHub Actions.
+
+GitHub Actions scheduling can be delayed, so a CLV snapshot is a reference point rather than a guaranteed official bookmaker closing price.
 
 ## Data files
 
-- `signals.csv` — every accepted research signal, including event time, price, fair probability, EV, stake percentage, and settlement fields.
-- `clv_snapshots.csv` — pre-start reference-price snapshots and the price-movement CLV calculation.
+- `signals.csv` — every accepted research signal, including a retry-safe ID, offered price, source-book provenance and update timestamps, probability spread, and settlement evidence.
+- `clv_snapshots.csv` — pre-start sharp-book consensus snapshots, benchmark-book keys/count, each benchmark price and source update timestamp, and the price-movement CLV calculation.
 - `sent_alerts_cache.csv` — state used to suppress immaterial repeat alerts.
-- `analysis_report.csv` — generated performance summary and breakdowns.
+- `analysis_report.csv` — generated performance summary and breakdowns, including pending/overdue counts and signal-version cohorts.
+- `manual_results.csv` — optional, source-attributed score backfills for past events missing from the rolling scores API window.
 
 ### CLV definition
 
-The current CLV metric is a **pre-start reference-price movement proxy**:
+The current CLV metric is a **pre-start sharp-book consensus price-movement measure**:
 
-`CLV % = (signal_odds / reference_odds - 1) * 100`
+`CLV % = (signal_odds / median_fresh_sharp_odds - 1) * 100`
 
-Positive CLV means the later reference price shortened relative to the original signal price. It is useful evidence about price movement, but it is not claimed to be an official exchange/bookmaker closing-line measurement.
+A positive value means the offered signal price was higher than the later median odds from the eligible sharp-book reference set. Snapshots require at least `MIN_SHARP_BOOKS` fresh, unique sharp-book observations for the same market signature. Because the capture window is normally up to ten minutes before kickoff and may not coincide with the final market close, this is not described as an official closing-line measurement.
+
+## Verified manual score backfill
+
+`manual_results.csv` now contains source-attributed results for the five overdue historical events in the current ledger. For any future completed event still pending after it falls outside the scores API's recent window, add another verified row using the same columns. Required columns are:
+
+`event_id,home_team,away_team,home_score,away_score,completed,source_name,source_url,verified_at`
+
+Rules:
+- Copy the exact `event_id` and team labels from `signals.csv`; the event ID and home/away labels must match the pending signal.
+- Enter only a final score that has been independently checked. Set `completed` to `true`.
+- Provide a meaningful source name, a working `http://` or `https://` evidence URL, and an ISO 8601 `verified_at` timestamp with timezone, for example `2026-10-13T06:30:00+00:00`.
+- The scores API result takes precedence when it can settle the signal. Invalid rows and duplicate event IDs in the manual file are rejected; manual settlement is not used if the recorded match labels do not match.
+- A settled signal records its settlement method and evidence fields. Already-settled rows are not overwritten.
+
+The report now counts pending signals, overdue pending signals (kickoff time is in the past), and the age of the oldest overdue signal. Pending records are excluded from ROI, P/L, drawdown, and calibration calculations.
 
 ## Validation standard
 

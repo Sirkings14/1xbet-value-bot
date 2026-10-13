@@ -1,6 +1,7 @@
 import unittest
+from datetime import datetime, timezone
 
-from analytics import brier_score, build_report, calibration_buckets, max_drawdown, max_losing_streak, summary
+from analytics import brier_score, build_report, calibration_buckets, max_drawdown, max_losing_streak, pending_summary, summary
 
 
 class AnalyticsTests(unittest.TestCase):
@@ -24,6 +25,14 @@ class AnalyticsTests(unittest.TestCase):
     def test_losing_streak(self):
         self.assertEqual(max_losing_streak(self.rows), 1)
 
+    def test_losing_streak_uses_settlement_order_not_signal_order(self):
+        rows = [
+            {"status": "loss", "settled_at": "2026-09-02T10:00:00+00:00"},
+            {"status": "win", "settled_at": "2026-09-01T10:00:00+00:00"},
+            {"status": "loss", "settled_at": "2026-09-03T10:00:00+00:00"},
+        ]
+        self.assertEqual(max_losing_streak(rows), 2)
+
     def test_drawdown(self):
         self.assertAlmostEqual(max_drawdown(self.rows), 1.0)
 
@@ -38,13 +47,55 @@ class AnalyticsTests(unittest.TestCase):
         self.assertAlmostEqual(buckets[0]["actual_win_rate"], 1.0)
         self.assertAlmostEqual(buckets[1]["avg_predicted"], 0.525)
 
+    def test_pending_summary_flags_overdue_kickoffs(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        rows = [
+            {"status": "", "commence_time": "2026-10-12T07:00:00+00:00"},
+            {"status": "", "commence_time": "2026-10-14T07:00:00+00:00"},
+            {"status": "win", "commence_time": "2026-10-11T07:00:00+00:00"},
+            {"status": "", "commence_time": "not-a-date"},
+        ]
+        result = pending_summary(rows, now=now)
+        self.assertEqual(result["pending"], 3)
+        self.assertEqual(result["overdue_pending"], 1)
+        self.assertEqual(result["oldest_pending_age_hours"], 24.0)
+
+    def test_report_contains_pending_counts_for_overall(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        rows = [
+            dict(self.rows[0], status="", commence_time="2026-10-12T07:00:00+00:00"),
+            dict(self.rows[1], commence_time="2026-09-01T07:00:00+00:00"),
+        ]
+        report = build_report(rows)
+        overall = next(row for row in report if row["section"] == "overall")
+        self.assertEqual(overall["pending"], 1)
+        self.assertEqual(overall["overdue_pending"], 1)
+
     def test_report_contains_required_breakdowns(self):
         report = build_report(self.rows)
         sections = {row["section"] for row in report}
-        self.assertEqual(sections, {"overall", "sport", "market", "ev_bucket", "odds_bucket"})
+        self.assertEqual(sections, {"overall", "sport", "market", "signal_version", "ev_bucket", "odds_bucket"})
         overall = next(row for row in report if row["section"] == "overall")
         self.assertIn("max_drawdown_units", overall)
         self.assertIn("brier_score", overall)
+
+    def test_report_separates_legacy_and_versioned_signal_cohorts(self):
+        rows = [
+            {"sport": "soccer_epl", "market": "h2h", "status": "win",
+             "profit_units": "1.0", "stake_pct": "1.0", "offered_odds": "2.0",
+             "ev_percent": "5", "fair_probability": "0.55",
+             "settled_at": "2026-10-01T10:00:00+00:00"},
+            {"sport": "soccer_epl", "market": "h2h", "status": "",
+             "signal_version": "signal-integrity-v1", "profit_units": "",
+             "stake_pct": "0.5", "offered_odds": "2.2", "ev_percent": "4",
+             "fair_probability": "0.50", "commence_time": "2026-10-12T10:00:00+00:00"},
+        ]
+        report = build_report(rows)
+        cohorts = {row["group"]: row for row in report if row["section"] == "signal_version"}
+        self.assertIn("legacy_unknown", cohorts)
+        self.assertIn("signal-integrity-v1", cohorts)
+        self.assertEqual(cohorts["legacy_unknown"]["settled"], 1)
+        self.assertEqual(cohorts["signal-integrity-v1"]["pending"], 1)
 
     def test_ev_buckets(self):
         report = build_report(self.rows)
