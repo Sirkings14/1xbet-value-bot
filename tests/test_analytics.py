@@ -1,6 +1,7 @@
 import unittest
+from datetime import datetime, timezone
 
-from analytics import brier_score, build_report, calibration_buckets, max_drawdown, max_losing_streak, summary
+from analytics import brier_score, build_report, calibration_buckets, max_drawdown, max_losing_streak, pending_summary, summary
 
 
 class AnalyticsTests(unittest.TestCase):
@@ -37,6 +38,30 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(buckets[0]["count"], 1)
         self.assertAlmostEqual(buckets[0]["actual_win_rate"], 1.0)
         self.assertAlmostEqual(buckets[1]["avg_predicted"], 0.525)
+
+    def test_pending_summary_flags_overdue_kickoffs(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        rows = [
+            {"status": "", "commence_time": "2026-10-12T07:00:00+00:00"},
+            {"status": "", "commence_time": "2026-10-14T07:00:00+00:00"},
+            {"status": "win", "commence_time": "2026-10-11T07:00:00+00:00"},
+            {"status": "", "commence_time": "not-a-date"},
+        ]
+        result = pending_summary(rows, now=now)
+        self.assertEqual(result["pending"], 3)
+        self.assertEqual(result["overdue_pending"], 1)
+        self.assertEqual(result["oldest_pending_age_hours"], 24.0)
+
+    def test_report_contains_pending_counts_for_overall(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        rows = [
+            dict(self.rows[0], status="", commence_time="2026-10-12T07:00:00+00:00"),
+            dict(self.rows[1], commence_time="2026-09-01T07:00:00+00:00"),
+        ]
+        report = build_report(rows)
+        overall = next(row for row in report if row["section"] == "overall")
+        self.assertEqual(overall["pending"], 1)
+        self.assertEqual(overall["overdue_pending"], 1)
 
     def test_report_contains_required_breakdowns(self):
         report = build_report(self.rows)
