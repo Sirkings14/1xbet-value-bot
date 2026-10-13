@@ -95,6 +95,34 @@ class SettlementTests(unittest.TestCase):
         self.assertIn("22c9b2c43cbe1334381269550dab78e6", results)
         self.assertIn("0d9ff865c4599c72a746da08260279b3", results)
 
+    def test_actual_repository_ledger_backfills_only_the_five_overdue_rows(self):
+        root = Path(__file__).resolve().parent.parent
+        with (root / "signals.csv").open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        manual, errors = load_manual_results(root / "manual_results.csv")
+        self.assertEqual(errors, [])
+
+        settled = settle_rows(
+            rows,
+            events_by_id={},
+            manual_results=manual,
+            now=datetime(2026, 10, 13, 7, 15, tzinfo=timezone.utc),
+        )
+        results_by_id = {
+            row["event_id"]: row
+            for row in settled
+            if row.get("status") in {"win", "loss", "push"}
+        }
+        self.assertEqual(len(results_by_id), 5)
+        self.assertEqual(len(settled) - len(results_by_id), 8)
+        self.assertEqual(results_by_id["22c9b2c43cbe1334381269550dab78e6"]["status"], "win")
+        self.assertEqual(results_by_id["da3d3fec3e0b6b939910427a76ecfb76"]["status"], "loss")
+        self.assertEqual(results_by_id["5866dae1e72b96ab74589ce49d3dcca7"]["status"], "loss")
+        self.assertEqual(results_by_id["02e6c0ccb11bb7ce78989ce49d67110b"]["status"], "loss")
+        self.assertEqual(results_by_id["0d9ff865c4599c72a746da08260279b3"]["status"], "win")
+        self.assertTrue(all(row["settlement_method"] == "manual_verified" for row in results_by_id.values()))
+        self.assertTrue(all(row["settlement_source_url"].startswith("https://") for row in results_by_id.values()))
+
     def test_manual_csv_loads_valid_result(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "manual_results.csv"
