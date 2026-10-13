@@ -1,8 +1,8 @@
 timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_odds,fair_probability,ev_percent,stake_pct,sharp_books,sharp_sample_count,status,profit_units,settled_at
-2026-09-14T23:51:53.717157+00:00,22c9b2c43cbe1334381269550dab78e6,soccer_epl,Manchester United vs Tottenham Hotspur,2026-10-10T16:30:00Z,h2h,Draw,4.41,2.6309,0.380103,67.6253,2.0,2,2,,,
+2026-09-14T23:51:53.717157+00:00,22c9b2c43cbe1334381269550dab78e6,soccer_epl,Manchester United vs Tottenham Hotspur,2026-10-10T16:30:00Z,h2h,Draw,4.41,2.6309,0.380103,67.6253,2.0,2,2,win,6.820000,2026-10-13T07:32:34.408240+00:00
 2026-09-15T13:20:19.779647+00:00,da3d3fec3e0b6b939910427a76ecfb76,soccer_spain_la_liga,Espanyol vs Elche CF,2026-09-18T19:00:00Z,h2h,Espanyol,1.96,1.9007,0.526134,3.1222,0.813,2,2,,,
 2026-09-15T13:20:20.260295+00:00,5866dae1e72b96ab74508039cd3dcca7,soccer_spain_la_liga,Atlético Madrid vs Real Madrid,2026-09-20T14:15:00Z,h2h,Draw,4.08,3.9584,0.252627,3.0719,0.249,2,2,,,
-2026-10-01T02:12:34.346895+00:00,02e6c0ccb11bb7ce78989ce49d67110b,soccer_epl,Aston Villa vs Brentford,2026-10-10T14:00:00Z,h2h,Brentford,2.79,2.7084,0.369225,3.0138,0.421,2,2,,,
+2026-10-01T02:12:34.346895+00:00,02e6c0ccb11bb7ce78989ce49d67110b,soccer_epl,Aston Villa vs Brentford,2026-10-10T14:00:00Z,h2h,Brentford,2.79,2.7084,0.369225,3.0138,0.421,2,2,loss,-0.421000,2026-10-13T07:32:34.408264+00:00
 2026-10-01T02:12:35.206962+00:00,f00cd1ea41fa39149729d14ebc07aa6c,soccer_spain_la_liga,Valencia vs Athletic Bilbao,2026-10-17T19:00:00Z,h2h,Draw,3.58,3.4249,0.29198,4.5289,0.439,2,2,,,
 2026-10-01T02:12:36.105870+00:00,4c7f87780ae5ab8bec9e83d6d6ec9909,soccer_uefa_champs_league,Real Betis vs Porto,2026-10-14T19:00:00Z,h2h,Porto,3.48,3.3666,0.297039,3.3695,0.34,2,2,,,
 2026-10-01T02:12:36.785160+00:00,0d9ff865c4599c72a746da08260279b3,soccer_usa_mls,Chicago Fire vs Vancouver Whitecaps FC,2026-10-07T00:30:00Z,h2h,Chicago Fire,2.92,2.5177,0.397192,15.9802,2.0,2,2,,,
@@ -12,3 +12,8 @@ timestamp,event_id,sport,match,commence_time,market,selection,offered_odds,fair_
 2026-10-03T13:11:38.483008+00:00,2b0a946cac613732fcbf57ce931490a1,soccer_uefa_champs_league,RC Lens vs Sporting Lisbon,2026-10-13T16:45:00Z,h2h,Sporting Lisbon,2.78,2.6719,0.374266,4.046,0.568,2,2,,,
 2026-10-03T20:00:59.561357+00:00,19ee731602634e5c9e3106630e087464,soccer_spain_la_liga,Deportivo La Coruña vs Levante,2026-10-16T19:00:00Z,h2h,Draw,3.62,3.4853,0.286922,3.8658,0.369,2,2,,,
 2026-10-03T22:50:38.723364+00:00,4a88bc4de574d43ef34677fd8d78722f,soccer_spain_la_liga,Getafe vs Rayo Vallecano,2026-10-19T19:00:00Z,h2h,Rayo Vallecano,2.82,2.7043,0.369781,4.2783,0.588,2,2,,,
+2026-10-13T07:32:31.161751+00:00,dfd5d6648be46426e418801584d46a68,soccer_epl,Bournemouth vs Sunderland,2026-10-18T13:00:00Z,h2h,Sunderland,3.85,3.7035,0.270011,3.9544,0.347,2,2,,,
+2026-10-13T07:32:31.587607+00:00,fe235b26408c477368c40672a4488694,soccer_epl,Crystal Palace vs Newcastle United,2026-10-25T14:00:00Z,h2h,Newcastle United,2.75,2.6612,0.375775,3.3382,0.477,2,2,,,
+2026-10-13T07:32:32.222634+00:00,6436925dd15916d7041ba32b60000d48,soccer_spain_la_liga,Espanyol vs Atlético Madrid,2026-10-17T12:00:00Z,h2h,Atlético Madrid,1.91,1.8456,0.541823,3.4882,0.958,2,2,,,
+2026-10-13T07:32:32.622064+00:00,a362cccad837f1ffae61ff43a3536688,soccer_spain_la_liga,Levante vs Athletic Bilbao,2026-10-21T18:00:00Z,h2h,Draw,3.52,2.0983,0.476567,67.7517,2.0,2,2,,,
+2026-10-13T07:32:33.213477+00:00,4c7f87780ae5ab8bec9e83d6d6ec9909,soccer_uefa_champs_league,Real Betis vs Porto,2026-10-14T19:00:00Z,h2h,Real Betis,2.16,2.0941,0.477528,3.146,0.678,2,2,,,
