@@ -181,7 +181,7 @@ def _bucket_odds(odds):
 
 def grouped_report(rows, field, bucket=None):
     groups = defaultdict(list)
-    for row in settled_rows(rows):
+    for row in rows:
         value = _num(row, field) if bucket else row.get(field, "unknown") or "unknown"
         key = bucket(value) if bucket else value
         groups[key].append(row)
@@ -195,6 +195,7 @@ def build_report(rows, clv_rows=None):
     sections.append(overall)
     for section, field, bucket in [
         ("sport", "sport", None), ("market", "market", None),
+        ("signal_version", "signal_version", None),
         ("ev_bucket", "ev_percent", _bucket_ev), ("odds_bucket", "offered_odds", _bucket_odds),
     ]:
         for item in grouped_report(rows, field, bucket):
