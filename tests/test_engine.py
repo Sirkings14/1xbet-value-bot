@@ -9,6 +9,7 @@ from main import (
     market_groups,
     normalise_name,
     should_alert,
+    valid_market_signature,
 )
 
 
@@ -44,11 +45,30 @@ class EngineTests(unittest.TestCase):
 
     def test_market_groups_do_not_mix_totals_lines(self):
         markets = [
-            {"book": "pinnacle", "prices": {"Over 2.5": 2.0, "Under 2.5": 1.8}},
-            {"book": "betfair_ex_uk", "prices": {"Over 3.5": 2.5, "Under 3.5": 1.55}},
+            {"book": "pinnacle", "prices": {
+                "Over 2.5": 1.91, "Under 2.5": 1.95,
+                "Over 3.5": 2.60, "Under 3.5": 1.50,
+            }},
+            {"book": "betfair_ex_uk", "prices": {
+                "Over 2.5": 1.88, "Under 2.5": 2.00,
+                "Over 3.5": 2.55, "Under 3.5": 1.52,
+            }},
         ]
         groups = market_groups(markets, "totals")
         self.assertEqual(len(groups), 2)
+        self.assertTrue(all(len(names) == 2 for names in groups))
+        self.assertTrue(all(len(snapshots) == 2 for snapshots in groups.values()))
+
+    def test_totals_point_format_is_canonicalised(self):
+        self.assertEqual(normalise_name("Over", "2.50"), "Over 2.5")
+
+    def test_soccer_h2h_requires_three_way_market(self):
+        self.assertFalse(valid_market_signature("soccer_epl", "h2h", {"Home FC", "Away FC"}))
+        self.assertTrue(valid_market_signature("soccer_epl", "h2h", {"Home FC", "Draw", "Away FC"}))
+
+    def test_totals_signature_requires_over_and_under(self):
+        self.assertTrue(valid_market_signature("soccer_epl", "totals", {"Over 2.5", "Under 2.5"}))
+        self.assertFalse(valid_market_signature("soccer_epl", "totals", {"Over 2.5", "Over 3.5"}))
 
     def test_alert_repeats_only_after_material_improvement(self):
         previous = {"offered_odds": 2.00, "ev_percent": 5.0}
