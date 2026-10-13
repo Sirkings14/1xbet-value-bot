@@ -117,7 +117,7 @@ class SettlementTests(unittest.TestCase):
         self.assertEqual(len(settled) - len(results_by_id), 8)
         self.assertEqual(results_by_id["22c9b2c43cbe1334381269550dab78e6"]["status"], "win")
         self.assertEqual(results_by_id["da3d3fec3e0b6b939910427a76ecfb76"]["status"], "loss")
-        self.assertEqual(results_by_id["5866dae1e72b96ab74589ce49d3dcca7"]["status"], "loss")
+        self.assertEqual(results_by_id["5866dae1e72b96ab74508039cd3dcca7"]["status"], "loss")
         self.assertEqual(results_by_id["02e6c0ccb11bb7ce78989ce49d67110b"]["status"], "loss")
         self.assertEqual(results_by_id["0d9ff865c4599c72a746da08260279b3"]["status"], "win")
         self.assertTrue(all(row["settlement_method"] == "manual_verified" for row in results_by_id.values()))
