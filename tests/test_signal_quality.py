@@ -108,6 +108,25 @@ class SignalQualityTests(unittest.TestCase):
         row["selection"] = "Over"
         self.assertTrue(any("totals selection" in e for e in validate_row(row, 2)))
 
+    def test_identified_settled_signal_requires_settlement_provenance(self):
+        row = self.valid_row()
+        row.update({
+            "signal_id": "d" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_probability_spread_pp": "1.2",
+            "status": "win",
+            "profit_units": "1.0",
+            "settled_at": "2026-10-13T06:00:00+00:00",
+            "settlement_method": "manual_verified",
+            "settlement_source": "Official results",
+            "settlement_source_url": "https://example.com/results",
+            "settlement_verified_at": "2026-10-13T05:55:00+00:00",
+        })
+        self.assertEqual(validate_row(row, 2), [])
+        row["settlement_source_url"] = "javascript:bad()"
+        self.assertTrue(any("http(s) source URL" in error for error in validate_row(row, 2)))
+
     def test_valid_push_row_passes(self):
         row = self.valid_row()
         row["market"] = "totals"
