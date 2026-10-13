@@ -92,9 +92,9 @@ class AnalyticsTests(unittest.TestCase):
         ]
         report = build_report(rows)
         cohorts = {row["group"]: row for row in report if row["section"] == "signal_version"}
-        self.assertIn("unknown", cohorts)
+        self.assertIn("legacy_unknown", cohorts)
         self.assertIn("signal-integrity-v1", cohorts)
-        self.assertEqual(cohorts["unknown"]["settled"], 1)
+        self.assertEqual(cohorts["legacy_unknown"]["settled"], 1)
         self.assertEqual(cohorts["signal-integrity-v1"]["pending"], 1)
 
     def test_ev_buckets(self):
