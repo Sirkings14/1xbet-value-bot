@@ -229,6 +229,14 @@ def print_report(report):
     print(f"Drawdown: {overall['max_drawdown_units']:.4f} units | Brier: {overall['brier_score']:.4f}")
     print(f"Avg odds: {overall['avg_odds']:.3f} | Avg EV: {overall['avg_ev_percent']:.2f}%")
     print(f"CLV snapshots: {overall['clv_snapshots']} | Avg CLV: {overall['avg_clv_percent']:.3f}% | Positive CLV: {overall['positive_clv_percent']:.2f}%")
+    cohorts = [row for row in report if row.get("section") == "signal_version"]
+    if cohorts:
+        print("=== BY SIGNAL VERSION ===")
+        for row in cohorts:
+            print(
+                f"{row['group']}: signals={row['signals']} | settled={row['settled']} | "
+                f"pending={row['pending']} | overdue={row['overdue_pending']} | ROI={row['roi_percent']:.2f}%"
+            )
 
 
 def main():
