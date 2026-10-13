@@ -19,6 +19,8 @@ from pathlib import Path
 SIGNALS_FILE = Path(os.getenv("SIGNALS_FILE", "signals.csv"))
 MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "2.0"))
 EV_TOLERANCE_PP = float(os.getenv("EV_TOLERANCE_PP", "0.05"))
+MAX_SHARP_PROB_SPREAD_PP = float(os.getenv("MAX_SHARP_PROB_SPREAD_PP", "8.0"))
+SIGNAL_ID_RE = re.compile(r"^[0-9a-f]{24}$")
 TOTALS_RE = re.compile(r"^(Over|Under)\s+\d+(?:\.\d+)?$")
 VALID_STATUS = {"", "win", "loss", "push"}
 
@@ -97,6 +99,25 @@ def validate_row(row: dict[str, str], row_number: int) -> list[str]:
     elif sharp_books is not None and sharp_sample_count < sharp_books:
         errors.append(f"row {row_number}: sharp_sample_count cannot be below sharp_books")
 
+    signal_id = _text(row, "signal_id")
+    if signal_id:
+        if not SIGNAL_ID_RE.fullmatch(signal_id):
+            errors.append(f"row {row_number}: signal_id must be a 24-character lowercase hex ID")
+        if not _text(row, "target_book"):
+            errors.append(f"row {row_number}: identified signal requires target_book")
+        book_keys = [item for item in _text(row, "sharp_book_keys").split("|") if item]
+        if len(book_keys) < 2 or len(set(book_keys)) != len(book_keys):
+            errors.append(f"row {row_number}: identified signal requires unique sharp_book_keys")
+        elif sharp_books is not None and len(book_keys) != sharp_books:
+            errors.append(f"row {row_number}: sharp_book_keys count does not match sharp_books")
+        spread = _number(row, "sharp_probability_spread_pp")
+        if spread is None or spread < 0:
+            errors.append(f"row {row_number}: identified signal requires finite non-negative probability spread")
+        elif spread > MAX_SHARP_PROB_SPREAD_PP:
+            errors.append(
+                f"row {row_number}: probability spread exceeds {MAX_SHARP_PROB_SPREAD_PP:g} percentage-point guard"
+            )
+
     market = _text(row, "market").lower()
     selection = _text(row, "selection")
     if market == "totals":
@@ -130,8 +151,14 @@ def validate_file(path: Path = SIGNALS_FILE) -> list[str]:
         if missing:
             return [f"signals.csv: missing columns: {', '.join(missing)}"]
         errors: list[str] = []
+        seen_signal_ids: set[str] = set()
         for row_number, row in enumerate(reader, start=2):
             errors.extend(validate_row(row, row_number))
+            signal_id = _text(row, "signal_id")
+            if signal_id:
+                if signal_id in seen_signal_ids:
+                    errors.append(f"row {row_number}: duplicate signal_id '{signal_id}'")
+                seen_signal_ids.add(signal_id)
         return errors
 
 
