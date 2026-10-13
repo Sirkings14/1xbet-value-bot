@@ -20,6 +20,7 @@ from main import (
     market_is_fresh,
     normalise_name,
     probability_spread_pp,
+    scan_event,
     send_telegram,
     should_alert,
     unique_book_snapshots,
@@ -160,6 +161,63 @@ class EngineTests(unittest.TestCase):
                 result = send_telegram("test alert")
         self.assertIsNone(result)
         self.assertIn("not configured", output.getvalue().lower())
+
+    def test_scan_records_signal_even_when_telegram_is_not_configured(self):
+        now = datetime.now(timezone.utc)
+        updated = now.isoformat()
+        event = {
+            "id": "evt-signal",
+            "sport_key": "soccer_epl",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "commence_time": (now + timedelta(hours=2)).isoformat(),
+        }
+        sharp = [
+            {"book": "pinnacle", "last_update": updated, "prices": {
+                "Home FC": 2.10, "Draw": 3.40, "Away FC": 3.60,
+            }},
+            {"book": "betfair_ex_uk", "last_update": updated, "prices": {
+                "Home FC": 2.12, "Draw": 3.35, "Away FC": 3.55,
+            }},
+        ]
+        retail = [{"book": "onexbet", "last_update": updated, "prices": {"Home FC": 3.50}}]
+        stats, cache = {}, {}
+        with patch.object(engine, "extract_bookmaker_markets", side_effect=[(sharp, retail), ([], [])]), \\
+             patch.object(engine, "append_signal", return_value=True) as persisted, \\
+             patch.object(engine, "send_telegram", return_value=None):
+            engine.scan_event(event, cache, stats)
+        self.assertTrue(persisted.called)
+        self.assertEqual(stats.get("signals_recorded"), 1)
+        self.assertEqual(stats.get("telegram_not_configured"), 1)
+        self.assertIn("evt-signal|h2h|Home FC", cache)
+
+    def test_scan_rejects_signals_when_sharp_books_disagree_too_much(self):
+        now = datetime.now(timezone.utc)
+        updated = now.isoformat()
+        event = {
+            "id": "evt-disagreement",
+            "sport_key": "soccer_epl",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "commence_time": (now + timedelta(hours=2)).isoformat(),
+        }
+        sharp = [
+            {"book": "pinnacle", "last_update": updated, "prices": {
+                "Home FC": 1.40, "Draw": 5.00, "Away FC": 10.00,
+            }},
+            {"book": "betfair_ex_uk", "last_update": updated, "prices": {
+                "Home FC": 4.00, "Draw": 3.30, "Away FC": 1.50,
+            }},
+        ]
+        retail = [{"book": "onexbet", "last_update": updated, "prices": {"Home FC": 4.00}}]
+        stats = {}
+        with patch.object(engine, "extract_bookmaker_markets", side_effect=[(sharp, retail), ([], [])]), \\
+             patch.object(engine, "append_signal") as persisted, \\
+             patch.object(engine, "send_telegram") as telegram:
+            engine.scan_event(event, {}, stats)
+        self.assertEqual(stats.get("sharp_disagreement_rejected"), 1)
+        persisted.assert_not_called()
+        telegram.assert_not_called()
 
     def test_alert_repeats_only_after_material_improvement(self):
         previous = {"offered_odds": 2.00, "ev_percent": 5.0}
