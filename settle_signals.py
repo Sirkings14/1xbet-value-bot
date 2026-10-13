@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from main import log_api_quota
+
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
@@ -312,6 +314,7 @@ def fetch_scores(sport_key):
         params={"apiKey": ODDS_API_KEY, "daysFrom": 3},
         timeout=REQUEST_TIMEOUT,
     )
+    log_api_quota(response, f"scores:{sport_key}")
     response.raise_for_status()
     return response.json()
 
@@ -337,6 +340,18 @@ def save_rows(rows, fields, path=SIGNALS_FILE):
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def pending_sports(rows):
+    """Return only sports with unresolved rows, avoiding quota spent on settled events."""
+    settled_statuses = {"win", "loss", "push"}
+    return sorted({
+        str(row.get("sport") or "").strip()
+        for row in rows
+        if str(row.get("sport") or "").strip()
+        and str(row.get("event_id") or "").strip()
+        and str(row.get("status") or "").strip().lower() not in settled_statuses
+    })
 
 
 def report(rows, now=None):
@@ -381,10 +396,10 @@ def main(argv=None):
     if args.manual_only:
         print("Settlement mode: manual-only (scores API disabled).")
     else:
-        sports = {r.get("sport", "") for r in rows if r.get("event_id")}
-        for sport in sorted(sports):
-            if not sport:
-                continue
+        sports = pending_sports(rows)
+        if not sports:
+            print("No pending signals; scores API calls skipped.")
+        for sport in sports:
             try:
                 for event in fetch_scores(sport):
                     if event.get("id"):
