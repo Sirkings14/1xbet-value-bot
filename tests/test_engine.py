@@ -182,10 +182,10 @@ class EngineTests(unittest.TestCase):
         ]
         retail = [{"book": "onexbet", "last_update": updated, "prices": {"Home FC": 3.50}}]
         stats, cache = {}, {}
-        with patch.object(engine, "extract_bookmaker_markets", side_effect=[(sharp, retail), ([], [])]), \\
-             patch.object(engine, "append_signal", return_value=True) as persisted, \\
-             patch.object(engine, "send_telegram", return_value=None):
-            engine.scan_event(event, cache, stats)
+        with patch.object(engine, "extract_bookmaker_markets", side_effect=[(sharp, retail), ([], [])]):
+            with patch.object(engine, "append_signal", return_value=True) as persisted:
+                with patch.object(engine, "send_telegram", return_value=None):
+                    engine.scan_event(event, cache, stats)
         self.assertTrue(persisted.called)
         self.assertEqual(stats.get("signals_recorded"), 1)
         self.assertEqual(stats.get("telegram_not_configured"), 1)
@@ -211,10 +211,10 @@ class EngineTests(unittest.TestCase):
         ]
         retail = [{"book": "onexbet", "last_update": updated, "prices": {"Home FC": 4.00}}]
         stats = {}
-        with patch.object(engine, "extract_bookmaker_markets", side_effect=[(sharp, retail), ([], [])]), \\
-             patch.object(engine, "append_signal") as persisted, \\
-             patch.object(engine, "send_telegram") as telegram:
-            engine.scan_event(event, {}, stats)
+        with patch.object(engine, "extract_bookmaker_markets", side_effect=[(sharp, retail), ([], [])]):
+            with patch.object(engine, "append_signal") as persisted:
+                with patch.object(engine, "send_telegram") as telegram:
+                    engine.scan_event(event, {}, stats)
         self.assertEqual(stats.get("sharp_disagreement_rejected"), 1)
         persisted.assert_not_called()
         telegram.assert_not_called()
