@@ -31,7 +31,7 @@ SETTLEMENT_FIELDS = (
     "settlement_source_url",
     "settlement_verified_at",
 )
-TOTALS_RE = re.compile(r"^(Over|Under)\\s+([0-9]+(?:\\.[05])?)$")
+TOTALS_RE = re.compile(r"^(Over|Under)\s+([0-9]+(?:\.[05])?)$")
 
 
 def parse_event_time(value):
