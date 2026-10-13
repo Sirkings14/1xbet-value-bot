@@ -36,8 +36,8 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Rejects signals when sharp-book probability estimates disagree by more than the configurable spread guard.
 - Persists a stable signal ID and source-book provenance before attempting Telegram delivery, with CSV schema migration and retry-safe deduplication.
 - Logs the target bookmaker, the target quote update timestamp, each sharp-book quote timestamp, source-book keys, and inter-book probability spread for later audits.
-- Tags new records as `signal-integrity-v1`; legacy records lacking a version are grouped as `unknown` and reported separately.
-- Performance reports show signal-version cohorts independently, including their pending and overdue counts; older records with no version are not conflated with the upgraded engine cohort.
+- Tags new records as `signal-integrity-v1`; legacy records lacking a version are grouped as `legacy_unknown` and reported separately.
+- Performance reports show signal-version cohorts independently, including their pending and overdue counts; older records with no version are grouped as `legacy_unknown`, not conflated with the upgraded engine cohort.
 - Alert-suppression IDs stay stable across price moves; ledger signal IDs are snapshot-specific and include the offered odds and estimated probability so identical retries are deduplicated without erasing materially changed snapshots.
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
