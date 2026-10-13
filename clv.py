@@ -75,7 +75,7 @@ def save_snapshots(rows):
     fields = [
         "snapshot_id", "timestamp", "signal_timestamp", "event_id", "sport", "market",
         "selection", "signal_odds", "reference_odds", "reference_book_count",
-        "reference_book_keys", "clv_percent",
+        "reference_book_keys", "reference_book_odds", "reference_quote_timestamps", "clv_percent",
     ]
     with CLV_FILE.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
@@ -142,6 +142,14 @@ def capture_signal(signal, event):
         "reference_odds": float(reference),
         "reference_book_count": len(complete),
         "reference_book_keys": "|".join(sorted(snapshot["book"] for snapshot in complete)),
+        "reference_book_odds": "|".join(
+            f"{item['book']}={float(item['prices'][selection]):.6f}"
+            for item in sorted(complete, key=lambda entry: entry["book"])
+        ),
+        "reference_quote_timestamps": "|".join(
+            f"{item['book']}={item['last_update']}"
+            for item in sorted(complete, key=lambda entry: entry["book"])
+        ),
         "clv_percent": clv_percent(signal_odds, reference),
     }
 
