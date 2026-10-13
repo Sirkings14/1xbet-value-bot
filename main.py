@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import math
 import os
 import re
@@ -19,6 +20,8 @@ MIN_EV = float(os.getenv("MIN_EV", "3.0"))
 MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "2.0"))
 KELLY_FRACTION = float(os.getenv("KELLY_FRACTION", "0.25"))
 MIN_SHARP_BOOKS = int(os.getenv("MIN_SHARP_BOOKS", "2"))
+MAX_SHARP_PROB_SPREAD_PP = float(os.getenv("MAX_SHARP_PROB_SPREAD_PP", "8.0"))
+MAX_MARKET_AGE_SECONDS = float(os.getenv("MAX_MARKET_AGE_SECONDS", "900"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
 MAX_EVENT_AGE_MINUTES = float(os.getenv("MAX_EVENT_AGE_MINUTES", "0"))
 RE_ALERT_EV_DELTA = float(os.getenv("RE_ALERT_EV_DELTA", "1.0"))
@@ -153,25 +156,102 @@ def save_cache(cache):
             })
 
 
-def append_signal(signal):
-    fields = [
-        "timestamp", "event_id", "sport", "match", "commence_time", "market", "selection",
-        "offered_odds", "fair_odds", "fair_probability", "ev_percent",
-        "stake_pct", "sharp_books", "sharp_sample_count",
-    ]
-    exists = SIGNALS_FILE.exists()
-    with SIGNALS_FILE.open("a", newline="", encoding="utf-8") as fh:
+SIGNAL_FIELDS = [
+    "timestamp", "event_id", "sport", "match", "commence_time", "market", "selection",
+    "offered_odds", "fair_odds", "fair_probability", "ev_percent", "stake_pct",
+    "sharp_books", "sharp_sample_count", "status", "profit_units", "settled_at",
+    "signal_id", "target_book", "sharp_book_keys", "sharp_probability_spread_pp",
+]
+
+
+def build_signal_id(event_id, market, selection, offered_odds, fair_probability):
+    """Stable ID for one distinct price/probability snapshot; safe to retry on delivery failure."""
+    raw = "|".join([
+        str(event_id), str(market), str(selection),
+        f"{float(offered_odds):.4f}", f"{float(fair_probability):.6f}",
+    ])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def append_signal(signal, path=None):
+    """Persist a research signal independently of Telegram and avoid duplicate snapshots."""
+    path = Path(path) if path is not None else SIGNALS_FILE
+    existing_rows = []
+    existing_ids = set()
+    fields = list(SIGNAL_FIELDS)
+
+    if path.exists():
+        with path.open("r", newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            existing_rows = list(reader)
+            existing_fields = list(reader.fieldnames or [])
+        fields = existing_fields + [field for field in SIGNAL_FIELDS if field not in existing_fields]
+        existing_ids = {row.get("signal_id", "") for row in existing_rows if row.get("signal_id")}
+
+        # Migrate older CSV headers before appending, so columns never shift.
+        if fields != existing_fields:
+            with path.open("w", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(existing_rows)
+
+    signal_id = str(signal.get("signal_id") or "")
+    if signal_id and signal_id in existing_ids:
+        return False
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists() or path.stat().st_size == 0
+    if not path.exists():
+        fields = list(SIGNAL_FIELDS)
+    with path.open("a", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
-        if not exists:
+        if write_header:
             writer.writeheader()
         writer.writerow(signal)
+    return True
+
+
+def market_is_fresh(snapshot, now=None):
+    """Fail closed when a bookmaker market has no usable or recent source timestamp."""
+    updated = parse_event_time(snapshot.get("last_update"))
+    if updated is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    age_seconds = (now - updated).total_seconds()
+    return -60.0 <= age_seconds <= MAX_MARKET_AGE_SECONDS
+
+
+def unique_book_snapshots(snapshots, outcome_names):
+    """Use one complete observation per bookmaker; exclude ambiguous duplicate rows."""
+    by_book = {}
+    required_names = set(outcome_names)
+    for snapshot in snapshots:
+        if not required_names.issubset(snapshot.get("prices", {})):
+            continue
+        by_book.setdefault(snapshot.get("book", ""), []).append(snapshot)
+    unique, duplicate_books = [], []
+    for book, observations in by_book.items():
+        if not book or len(observations) != 1:
+            if book:
+                duplicate_books.append(book)
+            continue
+        unique.append(observations[0])
+    return unique, sorted(duplicate_books)
+
+
+def probability_spread_pp(probability_samples):
+    spreads = []
+    for values in probability_samples.values():
+        if values:
+            spreads.append((max(values) - min(values)) * 100.0)
+    return max(spreads, default=0.0)
 
 
 def send_telegram(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("TELEGRAM_DIAGNOSTIC: Telegram not configured (missing token or chat ID).")
+        print("TELEGRAM_DIAGNOSTIC: Telegram not configured (message printed locally, not delivered).")
         print(message)
-        return True
+        return None
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -186,7 +266,8 @@ def send_telegram(message):
         return False
 
 
-def format_alert(event, market, selection, offered, fair_odds, probability, ev, stake, sharp_books):
+def format_alert(event, market, selection, offered, fair_odds, probability, ev, stake, sharp_books,
+                 target_book="", probability_spread_pp=0.0):
     home = event.get("home_team", "Home")
     away = event.get("away_team", "Away")
     start = event.get("commence_time", "unknown")
@@ -196,7 +277,9 @@ def format_alert(event, market, selection, offered, fair_odds, probability, ev, 
         "--------------------\n"
         f"1xBet odds: {offered:.2f}\nEstimated fair odds: {fair_odds:.2f}\n"
         f"Model probability: {probability * 100:.2f}%\nEstimated EV: +{ev:.2f}%\n"
-        f"Fractional Kelly: {stake:.3f}%\nSharp books: {', '.join(sorted(sharp_books))}\n"
+        f"Fractional Kelly (paper sizing only): {stake:.3f}%\nTarget book: {target_book or 'unknown'}\n"
+        f"Sharp books: {', '.join(sorted(sharp_books))}\n"
+        f"Maximum sharp probability spread: {probability_spread_pp:.2f} percentage points\n"
         "--------------------\nResearch alert only — verify the live line before acting."
     )
 
@@ -222,7 +305,11 @@ def extract_bookmaker_markets(event, market_key):
                 prices[name] = price
             if not prices:
                 continue
-            snapshot = {"book": key, "prices": prices}
+            snapshot = {
+                "book": key,
+                "prices": prices,
+                "last_update": market.get("last_update") or bookmaker.get("last_update"),
+            }
             if key in SHARP_BOOKS:
                 sharp.append(snapshot)
             if key in TARGET_RETAIL_BOOKS:
@@ -323,6 +410,14 @@ def scan_event(event, sent_cache, stats=None):
     event_id = event.get("id") or f"{event.get('home_team')}|{event.get('away_team')}|{event.get('commence_time')}"
     for market_key in ("h2h", "totals"):
         sharp_markets, retail_markets = extract_bookmaker_markets(event, market_key)
+        original_sharp_count, original_retail_count = len(sharp_markets), len(retail_markets)
+        sharp_markets = [snapshot for snapshot in sharp_markets if market_is_fresh(snapshot)]
+        retail_markets = [snapshot for snapshot in retail_markets if market_is_fresh(snapshot)]
+        stale_count = (original_sharp_count - len(sharp_markets)) + (original_retail_count - len(retail_markets))
+        if stale_count:
+            stats["stale_or_undated_market_snapshots"] = (
+                stats.get("stale_or_undated_market_snapshots", 0) + stale_count
+            )
         if not sharp_markets:
             stats["no_sharp_markets"] = stats.get("no_sharp_markets", 0) + 1
             continue
@@ -333,14 +428,18 @@ def scan_event(event, sent_cache, stats=None):
             if not valid_market_signature(event.get("sport_key", ""), market_key, outcome_names):
                 stats["invalid_market_signature"] = stats.get("invalid_market_signature", 0) + 1
                 continue
-            complete = [s for s in snapshots if outcome_names.issubset(s["prices"])]
+            complete, duplicate_books = unique_book_snapshots(snapshots, outcome_names)
+            if duplicate_books:
+                stats["duplicate_sharp_book_observations_excluded"] = (
+                    stats.get("duplicate_sharp_book_observations_excluded", 0) + len(duplicate_books)
+                )
             unique_books = {s["book"] for s in complete}
             if len(unique_books) < MIN_SHARP_BOOKS:
                 stats["insufficient_sharp_books"] = stats.get("insufficient_sharp_books", 0) + 1
                 continue
             probability_samples = {name: [] for name in outcome_names}
+            names = list(outcome_names)
             for snapshot in complete:
-                names = list(outcome_names)
                 probs = devig_shin([snapshot["prices"][name] for name in names])
                 if len(probs) != len(names):
                     continue
@@ -348,6 +447,10 @@ def scan_event(event, sent_cache, stats=None):
                     probability_samples[name].append(probability)
             if any(len(values) < MIN_SHARP_BOOKS for values in probability_samples.values()):
                 stats["insufficient_probability_samples"] = stats.get("insufficient_probability_samples", 0) + 1
+                continue
+            spread_pp = probability_spread_pp(probability_samples)
+            if spread_pp > MAX_SHARP_PROB_SPREAD_PP:
+                stats["sharp_disagreement_rejected"] = stats.get("sharp_disagreement_rejected", 0) + 1
                 continue
             fair_probs = {name: median(values) for name, values in probability_samples.items()}
             normaliser = sum(fair_probs.values())
@@ -360,7 +463,7 @@ def scan_event(event, sent_cache, stats=None):
                 if target is None:
                     stats["selection_missing_at_1xbet"] = stats.get("selection_missing_at_1xbet", 0) + 1
                     continue
-                _, offered = target
+                target_book, offered = target
                 if not MIN_ODDS <= offered <= MAX_ODDS:
                     stats["odds_out_of_range"] = stats.get("odds_out_of_range", 0) + 1
                     continue
@@ -378,26 +481,47 @@ def scan_event(event, sent_cache, stats=None):
                     stats["suppressed_duplicate_or_small_move"] = stats.get("suppressed_duplicate_or_small_move", 0) + 1
                     continue
                 fair_odds = 1.0 / probability
-                message = format_alert(event, market_key, name, offered, fair_odds, probability, ev, stake, unique_books)
-                if send_telegram(message):
+                timestamp = datetime.now(timezone.utc).isoformat()
+                signal = {
+                    "timestamp": timestamp,
+                    "event_id": event_id,
+                    "sport": event.get("sport_key", ""),
+                    "match": f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
+                    "commence_time": event.get("commence_time", ""),
+                    "market": market_key,
+                    "selection": name,
+                    "offered_odds": round(offered, 4),
+                    "fair_odds": round(fair_odds, 4),
+                    "fair_probability": round(probability, 6),
+                    "ev_percent": round(ev, 4),
+                    "stake_pct": stake,
+                    "sharp_books": len(unique_books),
+                    "sharp_sample_count": len(complete),
+                    "signal_id": build_signal_id(event_id, market_key, name, offered, probability),
+                    "target_book": target_book,
+                    "sharp_book_keys": "|".join(sorted(unique_books)),
+                    "sharp_probability_spread_pp": round(spread_pp, 4),
+                }
+                if append_signal(signal):
+                    stats["signals_recorded"] = stats.get("signals_recorded", 0) + 1
+                else:
+                    stats["duplicate_signal_snapshots_suppressed"] = (
+                        stats.get("duplicate_signal_snapshots_suppressed", 0) + 1
+                    )
+
+                delivery = send_telegram(
+                    format_alert(
+                        event, market_key, name, offered, fair_odds, probability, ev, stake,
+                        unique_books, target_book=target_book, probability_spread_pp=spread_pp,
+                    )
+                )
+                if delivery is True:
                     stats["telegram_sent"] = stats.get("telegram_sent", 0) + 1
-                    sent_cache[alert_id] = {"offered_odds": offered, "ev_percent": ev, "updated_at": datetime.now(timezone.utc).isoformat()}
-                    append_signal({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "event_id": event_id,
-                        "sport": event.get("sport_key", ""),
-                        "match": f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
-                        "commence_time": event.get("commence_time", ""),
-                        "market": market_key,
-                        "selection": name,
-                        "offered_odds": round(offered, 4),
-                        "fair_odds": round(fair_odds, 4),
-                        "fair_probability": round(probability, 6),
-                        "ev_percent": round(ev, 4),
-                        "stake_pct": stake,
-                        "sharp_books": len(unique_books),
-                        "sharp_sample_count": len(complete),
-                    })
+                    sent_cache[alert_id] = {"offered_odds": offered, "ev_percent": ev, "updated_at": timestamp}
+                elif delivery is None:
+                    stats["telegram_not_configured"] = stats.get("telegram_not_configured", 0) + 1
+                    # Local paper-trading mode must not log a new snapshot every poll.
+                    sent_cache[alert_id] = {"offered_odds": offered, "ev_percent": ev, "updated_at": timestamp}
                 else:
                     stats["telegram_failed"] = stats.get("telegram_failed", 0) + 1
 
@@ -417,7 +541,7 @@ def fetch_sport(sport_key):
 def run():
     print("=== 1xBet VALUE ENGINE v2 ===")
     print(f"Telegram configured: {'yes' if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else 'NO'}")
-    print(f"Filters: odds {MIN_ODDS:.2f}-{MAX_ODDS:.2f}, EV >= {MIN_EV:.2f}%, sharp books >= {MIN_SHARP_BOOKS}")
+    print(f"Filters: odds {MIN_ODDS:.2f}-{MAX_ODDS:.2f}, EV >= {MIN_EV:.2f}%, sharp books >= {MIN_SHARP_BOOKS}, max book spread <= {MAX_SHARP_PROB_SPREAD_PP:.1f}pp, market age <= {MAX_MARKET_AGE_SECONDS:.0f}s")
     print(f"Target 1xBet bookmaker keys: {', '.join(sorted(TARGET_RETAIL_BOOKS))}")
     cache = load_cache()
     stats = {}
