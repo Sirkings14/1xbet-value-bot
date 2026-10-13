@@ -37,6 +37,7 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Persists a stable signal ID and source-book provenance before attempting Telegram delivery, with CSV schema migration and retry-safe deduplication.
 - Logs the target bookmaker, the target quote update timestamp, each sharp-book quote timestamp, source-book keys, and inter-book probability spread for later audits.
 - Tags new records as `signal-integrity-v1`; legacy records lacking a version are grouped as `unknown` and reported separately.
+- Performance reports show signal-version cohorts independently, including their pending and overdue counts; older records with no version are not conflated with the upgraded engine cohort.
 - Stable signal IDs no longer include the current 1xBet odds, preventing duplicate signals when prices move.
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
@@ -100,7 +101,7 @@ A positive value means the offered signal price was higher than the later median
 
 ## Verified manual score backfill
 
-If a completed event remains pending after it falls outside the scores API's recent window, add one row to `manual_results.csv`. The file's header is already present. Required columns are:
+`manual_results.csv` now contains source-attributed results for the five overdue historical events in the current ledger. For any future completed event still pending after it falls outside the scores API's recent window, add another verified row using the same columns. Required columns are:
 
 `event_id,home_team,away_team,home_score,away_score,completed,source_name,source_url,verified_at`
 
