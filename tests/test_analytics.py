@@ -25,6 +25,14 @@ class AnalyticsTests(unittest.TestCase):
     def test_losing_streak(self):
         self.assertEqual(max_losing_streak(self.rows), 1)
 
+    def test_losing_streak_uses_settlement_order_not_signal_order(self):
+        rows = [
+            {"status": "loss", "settled_at": "2026-09-02T10:00:00+00:00"},
+            {"status": "win", "settled_at": "2026-09-01T10:00:00+00:00"},
+            {"status": "loss", "settled_at": "2026-09-03T10:00:00+00:00"},
+        ]
+        self.assertEqual(max_losing_streak(rows), 2)
+
     def test_drawdown(self):
         self.assertAlmostEqual(max_drawdown(self.rows), 1.0)
 
