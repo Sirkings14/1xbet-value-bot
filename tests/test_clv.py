@@ -26,6 +26,64 @@ class ClvTests(unittest.TestCase):
         self.assertIsNotNone(parse_time("2026-09-14T20:00:00Z"))
         self.assertIsNone(parse_time("2026-09-14T20:00:00"))
 
+    def test_totals_clv_retains_source_price_and_timestamp_provenance(self):
+        now = datetime.now(timezone.utc)
+        pinnacle_time = (now - timedelta(seconds=30)).isoformat()
+        betfair_time = now.isoformat()
+        event = {
+            "id": "evt-totals-clv",
+            "sport_key": "soccer_epl",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "bookmakers": [
+                {
+                    "key": "pinnacle",
+                    "last_update": pinnacle_time,
+                    "markets": [{
+                        "key": "totals",
+                        "last_update": pinnacle_time,
+                        "outcomes": [
+                            {"name": "Over", "point": 2.5, "price": 1.95},
+                            {"name": "Under", "point": 2.5, "price": 1.85},
+                        ],
+                    }],
+                },
+                {
+                    "key": "betfair_ex_uk",
+                    "last_update": betfair_time,
+                    "markets": [{
+                        "key": "totals",
+                        "last_update": betfair_time,
+                        "outcomes": [
+                            {"name": "Over", "point": 2.5, "price": 2.00},
+                            {"name": "Under", "point": 2.5, "price": 1.80},
+                        ],
+                    }],
+                },
+            ],
+        }
+        signal = {
+            "timestamp": now.isoformat(),
+            "event_id": "evt-totals-clv",
+            "sport": "soccer_epl",
+            "market": "totals",
+            "selection": "Over 2.5",
+            "offered_odds": "2.20",
+        }
+
+        snapshot = capture_signal(signal, event)
+        self.assertIsNotNone(snapshot)
+        self.assertAlmostEqual(snapshot["reference_odds"], 1.975)
+        self.assertEqual(
+            snapshot["reference_book_odds"],
+            "betfair_ex_uk=2.000000|pinnacle=1.950000",
+        )
+        self.assertEqual(
+            snapshot["reference_quote_timestamps"],
+            f"betfair_ex_uk={betfair_time}|pinnacle={pinnacle_time}",
+        )
+        self.assertEqual(snapshot["reference_book_count"], 2)
+
     def test_capture_clv_uses_fresh_sharp_book_consensus(self):
         update_time = datetime.now(timezone.utc).isoformat()
         event = {
