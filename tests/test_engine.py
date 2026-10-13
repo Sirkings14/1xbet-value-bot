@@ -200,6 +200,7 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(persisted.called)
         saved_signal = persisted.call_args.args[0]
         self.assertEqual(saved_signal["target_quote_updated_at"], updated)
+        self.assertEqual(saved_signal["signal_version"], engine.SIGNAL_VERSION)
         self.assertEqual(
             saved_signal["sharp_quote_timestamps"],
             f"betfair_ex_uk={updated}|pinnacle={updated}",
