@@ -74,10 +74,28 @@ class AnalyticsTests(unittest.TestCase):
     def test_report_contains_required_breakdowns(self):
         report = build_report(self.rows)
         sections = {row["section"] for row in report}
-        self.assertEqual(sections, {"overall", "sport", "market", "ev_bucket", "odds_bucket"})
+        self.assertEqual(sections, {"overall", "sport", "market", "signal_version", "ev_bucket", "odds_bucket"})
         overall = next(row for row in report if row["section"] == "overall")
         self.assertIn("max_drawdown_units", overall)
         self.assertIn("brier_score", overall)
+
+    def test_report_separates_legacy_and_versioned_signal_cohorts(self):
+        rows = [
+            {"sport": "soccer_epl", "market": "h2h", "status": "win",
+             "profit_units": "1.0", "stake_pct": "1.0", "offered_odds": "2.0",
+             "ev_percent": "5", "fair_probability": "0.55",
+             "settled_at": "2026-10-01T10:00:00+00:00"},
+            {"sport": "soccer_epl", "market": "h2h", "status": "",
+             "signal_version": "signal-integrity-v1", "profit_units": "",
+             "stake_pct": "0.5", "offered_odds": "2.2", "ev_percent": "4",
+             "fair_probability": "0.50", "commence_time": "2026-10-12T10:00:00+00:00"},
+        ]
+        report = build_report(rows)
+        cohorts = {row["group"]: row for row in report if row["section"] == "signal_version"}
+        self.assertIn("unknown", cohorts)
+        self.assertIn("signal-integrity-v1", cohorts)
+        self.assertEqual(cohorts["unknown"]["settled"], 1)
+        self.assertEqual(cohorts["signal-integrity-v1"]["pending"], 1)
 
     def test_ev_buckets(self):
         report = build_report(self.rows)
