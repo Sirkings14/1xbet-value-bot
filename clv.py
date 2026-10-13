@@ -1,4 +1,4 @@
-"""Capture pre-start 1xBet prices and measure paper-trading CLV."""
+"""Capture pre-start sharp-book consensus prices and measure paper-trading CLV."""
 
 from __future__ import annotations
 
@@ -7,10 +7,18 @@ import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from statistics import median
 
 import requests
 
-from main import extract_bookmaker_markets, find_target_price
+from main import (
+    MIN_SHARP_BOOKS,
+    extract_bookmaker_markets,
+    market_groups,
+    market_is_fresh,
+    unique_book_snapshots,
+    valid_market_signature,
+)
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
@@ -64,7 +72,11 @@ def load_snapshots():
 
 
 def save_snapshots(rows):
-    fields = ["snapshot_id", "timestamp", "signal_timestamp", "event_id", "sport", "market", "selection", "signal_odds", "reference_odds", "clv_percent"]
+    fields = [
+        "snapshot_id", "timestamp", "signal_timestamp", "event_id", "sport", "market",
+        "selection", "signal_odds", "reference_odds", "reference_book_count",
+        "reference_book_keys", "clv_percent",
+    ]
     with CLV_FILE.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -89,24 +101,47 @@ def build_event_index(events):
 
 def capture_signal(signal, event):
     market_key = signal.get("market")
+    selection = signal.get("selection", "")
     if market_key not in {"h2h", "totals"}:
         return None
-    _, retail = extract_bookmaker_markets(event, market_key)
-    target = find_target_price(retail, signal.get("selection", ""))
-    if not target:
+
+    sharp, _ = extract_bookmaker_markets(event, market_key)
+    sharp = [snapshot for snapshot in sharp if market_is_fresh(snapshot)]
+    if not sharp:
         return None
-    _, reference = target
+
+    matches = [
+        (outcome_names, snapshots)
+        for outcome_names, snapshots in market_groups(sharp, market_key).items()
+        if selection in outcome_names
+        and valid_market_signature(event.get("sport_key", ""), market_key, outcome_names)
+    ]
+    # Ambiguous or missing market signatures should never produce a CLV observation.
+    if len(matches) != 1:
+        return None
+
+    outcome_names, snapshots = matches[0]
+    complete, _duplicate_books = unique_book_snapshots(snapshots, outcome_names)
+    if len(complete) < MIN_SHARP_BOOKS:
+        return None
+
+    reference_prices = [float(snapshot["prices"][selection]) for snapshot in complete]
+    if any(price <= 1 or not math.isfinite(price) for price in reference_prices):
+        return None
+    reference = median(reference_prices)
     signal_odds = float(signal.get("offered_odds"))
     return {
-        "snapshot_id": f"{signal.get('timestamp','')}|{signal.get('event_id','')}|{market_key}|{signal.get('selection','')}",
+        "snapshot_id": f"{signal.get('timestamp','')}|{signal.get('event_id','')}|{market_key}|{selection}",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "signal_timestamp": signal.get("timestamp", ""),
         "event_id": signal.get("event_id", ""),
         "sport": signal.get("sport", ""),
         "market": market_key,
-        "selection": signal.get("selection", ""),
+        "selection": selection,
         "signal_odds": signal_odds,
         "reference_odds": float(reference),
+        "reference_book_count": len(complete),
+        "reference_book_keys": "|".join(sorted(snapshot["book"] for snapshot in complete)),
         "clv_percent": clv_percent(signal_odds, reference),
     }
 
