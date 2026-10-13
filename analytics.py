@@ -1,11 +1,12 @@
 import csv
+import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-SIGNALS_FILE = Path("signals.csv")
-CLV_FILE = Path("clv_snapshots.csv")
-REPORT_FILE = Path("analysis_report.csv")
+SIGNALS_FILE = Path(os.getenv("SIGNALS_FILE", "signals.csv"))
+CLV_FILE = Path(os.getenv("CLV_FILE", "clv_snapshots.csv"))
+REPORT_FILE = Path(os.getenv("REPORT_FILE", "analysis_report.csv"))
 
 
 def _num(row, key, default=0.0):
