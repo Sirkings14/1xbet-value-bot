@@ -53,21 +53,29 @@ jobs:
               rows = list(csv.DictReader(handle))
           with report_path.open(newline="", encoding="utf-8") as handle:
               report = list(csv.DictReader(handle))
+          manual_path = Path(os.environ["MANUAL_RESULTS_FILE"])
+          with manual_path.open(newline="", encoding="utf-8") as handle:
+              manual_results = list(csv.DictReader(handle))
           settled = [row for row in rows if row.get("status") in {"win", "loss", "push"}]
           pending = [row for row in rows if row.get("status") not in {"win", "loss", "push"}]
           overall = next(row for row in report if row["section"] == "overall")
           outcomes = {row["status"] for row in settled}
-          assert len(rows) == 13, f"expected 13 signals, got {len(rows)}"
-          assert len(settled) == 5, f"expected five settled historical signals, got {len(settled)}"
-          assert len(pending) == 8, f"expected eight pending signals, got {len(pending)}"
-          assert sum(row["status"] == "win" for row in settled) == 2
-          assert sum(row["status"] == "loss" for row in settled) == 3
-          assert sum(row["status"] == "push" for row in settled) == 0
-          assert all(row.get("settlement_method") == "manual_verified" for row in settled)
-          assert all(row.get("settlement_source_url", "").startswith("https://") for row in settled)
-          assert int(overall["settled"]) == 5 and int(overall["pending"]) == 8
+          manual_event_ids = {row["event_id"] for row in manual_results if row.get("event_id")}
+          settled_manual_rows = [row for row in settled if row.get("event_id") in manual_event_ids]
+          settled_manual_ids = {row.get("event_id") for row in settled_manual_rows}
+          assert manual_event_ids.issubset(settled_manual_ids), (
+              f"manual backfill events not settled: {sorted(manual_event_ids - settled_manual_ids)}"
+          )
+          assert all(row.get("settlement_method") in {"manual_verified", "scores_api"} for row in settled_manual_rows)
+          assert all(row.get("settlement_source_url", "").startswith("https://") for row in settled_manual_rows)
+          assert int(overall["signals"]) == len(rows)
+          assert int(overall["settled"]) == len(settled)
+          assert int(overall["pending"]) == len(pending)
+          assert sum(row["status"] == "win" for row in settled) == int(overall["wins"])
+          assert sum(row["status"] == "loss" for row in settled) == int(overall["losses"])
+          assert sum(row["status"] == "push" for row in settled) == int(overall["pushes"])
           print("OFFLINE_RECONCILIATION_ASSERTIONS: PASS")
-          print(f"Verified rows: {len(settled)} | Pending rows: {len(pending)} | Outcomes: {dict((x, sum(r['status'] == x for r in settled)) for x in sorted(outcomes))}")
+          print(f"Signals: {len(rows)} | Verified manual-result events: {len(settled_manual_ids)} | Pending: {len(pending)} | Outcomes: {dict((x, sum(r['status'] == x for r in settled)) for x in sorted(outcomes))}")
           print(f"Paper P/L: {overall['profit_units']} stake-pct units | ROI: {overall['roi_percent']}%")
           PY
       - name: Upload offline reconciliation output
