@@ -86,7 +86,7 @@ The scanner schedule currently polls every five minutes during the configured UT
 ## Data files
 
 - `signals.csv` — every accepted research signal, including a retry-safe ID, offered price, source-book provenance and update timestamps, probability spread, and settlement evidence.
-- `clv_snapshots.csv` — pre-start sharp-book consensus snapshots, benchmark-book keys/count, and the price-movement CLV calculation.
+- `clv_snapshots.csv` — pre-start sharp-book consensus snapshots, benchmark-book keys/count, each benchmark price and source update timestamp, and the price-movement CLV calculation.
 - `sent_alerts_cache.csv` — state used to suppress immaterial repeat alerts.
 - `analysis_report.csv` — generated performance summary and breakdowns, including pending/overdue counts and signal-version cohorts.
 - `manual_results.csv` — optional, source-attributed score backfills for past events missing from the rolling scores API window.
