@@ -1,5 +1,6 @@
 import csv
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 SIGNALS_FILE = Path("signals.csv")
@@ -29,7 +30,38 @@ def load_clv(path=CLV_FILE):
 
 
 def settled_rows(rows):
-    return [r for r in rows if str(r.get("status", "")).lower() in {"win", "loss", "push"}]
+    return [r for r in rows if str(r.get("status", "")).strip().lower() in {"win", "loss", "push"}]
+
+
+def _parse_aware_time(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def pending_summary(rows, now=None):
+    """Count unresolved signals and identify those whose scheduled kickoff has passed."""
+    now = now or datetime.now(timezone.utc)
+    pending = [
+        row for row in rows
+        if str(row.get("status", "")).strip().lower() not in {"win", "loss", "push"}
+    ]
+    overdue_ages = []
+    for row in pending:
+        kickoff = _parse_aware_time(row.get("commence_time", ""))
+        if kickoff is not None and kickoff < now:
+            overdue_ages.append((now - kickoff).total_seconds() / 3600.0)
+    return {
+        "pending": len(pending),
+        "overdue_pending": len(overdue_ages),
+        "oldest_pending_age_hours": round(max(overdue_ages), 2) if overdue_ages else 0.0,
+    }
 
 
 def binary_rows(rows):
@@ -106,7 +138,7 @@ def clv_summary(rows):
     return {"clv_snapshots": len(values), "avg_clv_percent": round(sum(values) / len(values), 6), "positive_clv_percent": round(sum(v > 0 for v in values) / len(values) * 100.0, 4)}
 
 
-def summary(rows):
+def summary(rows, now=None):
     settled = settled_rows(rows)
     wins = sum(str(r.get("status", "")).lower() == "win" for r in settled)
     losses = sum(str(r.get("status", "")).lower() == "loss" for r in settled)
@@ -116,6 +148,7 @@ def summary(rows):
     roi = (profit / staked * 100.0) if staked else 0.0
     return {
         "signals": len(rows), "settled": len(settled), "wins": wins, "losses": losses, "pushes": pushes,
+        **pending_summary(rows, now=now),
         "profit_units": round(profit, 6), "staked_pct_units": round(staked, 6), "roi_percent": round(roi, 4),
         "win_rate_percent": round(wins / (wins + losses) * 100.0, 4) if wins + losses else 0.0,
         "max_losing_streak": max_losing_streak(settled), "max_drawdown_units": max_drawdown(settled),
@@ -169,7 +202,8 @@ def build_report(rows, clv_rows=None):
 
 def save_report(report, path=REPORT_FILE):
     fields = [
-        "section", "group", "signals", "settled", "wins", "losses", "pushes", "profit_units", "staked_pct_units",
+        "section", "group", "signals", "settled", "pending", "overdue_pending", "oldest_pending_age_hours",
+        "wins", "losses", "pushes", "profit_units", "staked_pct_units",
         "roi_percent", "win_rate_percent", "max_losing_streak", "max_drawdown_units", "brier_score", "avg_odds",
         "avg_ev_percent", "avg_fair_probability", "clv_snapshots", "avg_clv_percent", "positive_clv_percent",
     ]
@@ -185,7 +219,8 @@ def print_report(report):
         print("No settled signals yet.")
         return
     print("=== PAPER-TRADING PERFORMANCE ===")
-    print(f"Settled: {overall['settled']} | W/L/P: {overall['wins']}/{overall['losses']}/{overall['pushes']}")
+    print(f"Settled: {overall['settled']} | Pending: {overall['pending']} | W/L/P: {overall['wins']}/{overall['losses']}/{overall['pushes']}")
+    print(f"Overdue pending: {overall['overdue_pending']} | Oldest pending: {overall['oldest_pending_age_hours']:.2f} hours")
     print(f"P/L units: {overall['profit_units']:.4f} | ROI: {overall['roi_percent']:.2f}%")
     print(f"Win rate: {overall['win_rate_percent']:.2f}% | Max losing streak: {overall['max_losing_streak']}")
     print(f"Drawdown: {overall['max_drawdown_units']:.4f} units | Brier: {overall['brier_score']:.4f}")
