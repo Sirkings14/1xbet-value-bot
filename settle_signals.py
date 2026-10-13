@@ -325,7 +325,7 @@ def report(rows, now=None):
     print(f"Signals: {audit['signals']} | Settled: {audit['settled']} | Pending: {audit['pending']}")
     print(f"Overdue pending: {audit['overdue_pending']} | Oldest pending age: {audit['oldest_pending_age_hours']:.2f} hours")
     print(f"Settled W/L/P: {wins}/{losses}/{pushes}")
-    print(f"Paper P/L: {profit:.4f stake-pct units | ROI: {roi:.2f}%")
+    print(f"Paper P/L: {profit:.4f} stake-pct units | ROI: {roi:.2f}%")
 
 
 def main():
