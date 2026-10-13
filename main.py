@@ -1,6 +1,7 @@
 import csv
 import math
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
@@ -42,7 +43,13 @@ TARGET_RETAIL_BOOKS = {"onexbet", "1xbet", "1x"}
 
 def normalise_name(name, point=None):
     name = str(name).strip()
-    return f"{name} {point}" if point is not None else name
+    if point is None:
+        return name
+    try:
+        point_label = f"{float(point):g}"
+    except (TypeError, ValueError):
+        point_label = str(point).strip()
+    return f"{name} {point_label}"
 
 
 def parse_event_time(value):
@@ -227,11 +234,64 @@ def market_groups(sharp_markets, market_key):
     groups = {}
     for snapshot in sharp_markets:
         prices = snapshot["prices"]
+
+        if market_key == "totals":
+            # A bookmaker may expose several totals lines in one market response.
+            # De-vig each Over/Under pair independently; never treat different
+            # lines (e.g. 2.5 and 3.5 goals) as outcomes of one market.
+            by_point = {}
+            for selection, price in prices.items():
+                match = re.fullmatch(
+                    r"(Over|Under)\s+(-?\d+(?:\.\d+)?)",
+                    str(selection),
+                    flags=re.IGNORECASE,
+                )
+                if not match:
+                    continue
+                side = match.group(1).title()
+                point = float(match.group(2))
+                canonical_selection = f"{side} {point:g}"
+                by_point.setdefault(point, {})[canonical_selection] = price
+
+            for line_prices in by_point.values():
+                names = frozenset(line_prices)
+                if len(names) != 2:
+                    continue
+                if not any(name.startswith("Over ") for name in names):
+                    continue
+                if not any(name.startswith("Under ") for name in names):
+                    continue
+                groups.setdefault(names, []).append({
+                    "book": snapshot["book"],
+                    "prices": line_prices,
+                })
+            continue
+
         names = frozenset(prices)
         if len(names) < 2 or (market_key == "h2h" and len(names) > 3):
             continue
         groups.setdefault(names, []).append(snapshot)
     return groups
+
+
+def valid_market_signature(sport_key, market_key, outcome_names):
+    """Reject incomplete outcome sets before converting odds into probabilities."""
+    names = set(outcome_names)
+
+    if market_key == "totals":
+        if len(names) != 2:
+            return False
+        has_over = any(name.startswith("Over ") for name in names)
+        has_under = any(name.startswith("Under ") for name in names)
+        return has_over and has_under
+
+    if market_key == "h2h":
+        if str(sport_key or "").lower().startswith("soccer_"):
+            # Soccer head-to-head markets must include home, draw and away.
+            return len(names) == 3 and any(name.strip().casefold() == "draw" for name in names)
+        return 2 <= len(names) <= 3
+
+    return False
 
 
 def find_target_price(retail_markets, selection):
@@ -270,6 +330,9 @@ def scan_event(event, sent_cache, stats=None):
             stats["no_1xbet_markets"] = stats.get("no_1xbet_markets", 0) + 1
             continue
         for outcome_names, snapshots in market_groups(sharp_markets, market_key).items():
+            if not valid_market_signature(event.get("sport_key", ""), market_key, outcome_names):
+                stats["invalid_market_signature"] = stats.get("invalid_market_signature", 0) + 1
+                continue
             complete = [s for s in snapshots if outcome_names.issubset(s["prices"])]
             unique_books = {s["book"] for s in complete}
             if len(unique_books) < MIN_SHARP_BOOKS:
