@@ -87,6 +87,7 @@ The scanner schedule currently polls every five minutes during the configured UT
 - `clv_snapshots.csv` — pre-start sharp-book consensus snapshots, benchmark-book keys/count, and the price-movement CLV calculation.
 - `sent_alerts_cache.csv` — state used to suppress immaterial repeat alerts.
 - `analysis_report.csv` — generated performance summary and breakdowns.
+- `manual_results.csv` — optional, source-attributed score backfills for past events missing from the rolling scores API window.
 
 ### CLV definition
 
@@ -95,6 +96,21 @@ The current CLV metric is a **pre-start sharp-book consensus price-movement meas
 `CLV % = (signal_odds / median_fresh_sharp_odds - 1) * 100`
 
 A positive value means the offered signal price was higher than the later median odds from the eligible sharp-book reference set. Snapshots require at least `MIN_SHARP_BOOKS` fresh, unique sharp-book observations for the same market signature. Because the capture window is normally up to ten minutes before kickoff and may not coincide with the final market close, this is not described as an official closing-line measurement.
+
+## Verified manual score backfill
+
+If a completed event remains pending after it falls outside the scores API's recent window, add one row to `manual_results.csv`. The file's header is already present. Required columns are:
+
+`event_id,home_team,away_team,home_score,away_score,completed,source_name,source_url,verified_at`
+
+Rules:
+- Copy the exact `event_id` and team labels from `signals.csv`; the event ID and home/away labels must match the pending signal.
+- Enter only a final score that has been independently checked. Set `completed` to `true`.
+- Provide a meaningful source name, a working `http://` or `https://` evidence URL, and an ISO 8601 `verified_at` timestamp with timezone, for example `2026-10-13T06:30:00+00:00`.
+- The scores API result takes precedence when it can settle the signal. Invalid rows and duplicate event IDs in the manual file are rejected; manual settlement is not used if the recorded match labels do not match.
+- A settled signal records its settlement method and evidence fields. Already-settled rows are not overwritten.
+
+The report now counts pending signals, overdue pending signals (kickoff time is in the past), and the age of the oldest overdue signal. Pending records are excluded from ROI, P/L, drawdown, and calibration calculations.
 
 ## Validation standard
 
