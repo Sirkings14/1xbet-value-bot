@@ -105,11 +105,30 @@ def validate_row(row: dict[str, str], row_number: int) -> list[str]:
             errors.append(f"row {row_number}: signal_id must be a 24-character lowercase hex ID")
         if not _text(row, "target_book"):
             errors.append(f"row {row_number}: identified signal requires target_book")
+        if not _valid_timestamp(_text(row, "target_quote_updated_at")):
+            errors.append(f"row {row_number}: identified signal requires timezone-aware target_quote_updated_at")
         book_keys = [item for item in _text(row, "sharp_book_keys").split("|") if item]
         if len(book_keys) < 2 or len(set(book_keys)) != len(book_keys):
             errors.append(f"row {row_number}: identified signal requires unique sharp_book_keys")
         elif sharp_books is not None and len(book_keys) != sharp_books:
             errors.append(f"row {row_number}: sharp_book_keys count does not match sharp_books")
+
+        sharp_quotes = [item for item in _text(row, "sharp_quote_timestamps").split("|") if item]
+        quote_map = {}
+        for item in sharp_quotes:
+            if "=" not in item:
+                errors.append(f"row {row_number}: malformed sharp_quote_timestamps entry")
+                continue
+            book, timestamp = item.split("=", 1)
+            if not book or book in quote_map:
+                errors.append(f"row {row_number}: sharp quote timestamps must have unique bookmaker keys")
+                continue
+            quote_map[book] = timestamp
+            if not _valid_timestamp(timestamp):
+                errors.append(f"row {row_number}: sharp quote timestamp for '{book}' must be timezone-aware")
+        if set(quote_map) != set(book_keys):
+            errors.append(f"row {row_number}: sharp quote timestamp keys must match sharp_book_keys")
+
         spread = _number(row, "sharp_probability_spread_pp")
         if spread is None or spread < 0:
             errors.append(f"row {row_number}: identified signal requires finite non-negative probability spread")
