@@ -36,6 +36,7 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Rejects signals when sharp-book probability estimates disagree by more than the configurable spread guard.
 - Persists a stable signal ID and source-book provenance before attempting Telegram delivery, with CSV schema migration and retry-safe deduplication.
 - Logs the target bookmaker, the target quote update timestamp, each sharp-book quote timestamp, source-book keys, and inter-book probability spread for later audits.
+- Tags new records as `signal-integrity-v1`; legacy records lacking a version are grouped as `unknown` and reported separately.
 - Stable signal IDs no longer include the current 1xBet odds, preventing duplicate signals when prices move.
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
@@ -86,7 +87,7 @@ The scanner schedule currently polls every five minutes during the configured UT
 - `signals.csv` — every accepted research signal, including a retry-safe ID, offered price, source-book provenance and update timestamps, probability spread, and settlement evidence.
 - `clv_snapshots.csv` — pre-start sharp-book consensus snapshots, benchmark-book keys/count, and the price-movement CLV calculation.
 - `sent_alerts_cache.csv` — state used to suppress immaterial repeat alerts.
-- `analysis_report.csv` — generated performance summary and breakdowns.
+- `analysis_report.csv` — generated performance summary and breakdowns, including pending/overdue counts and signal-version cohorts.
 - `manual_results.csv` — optional, source-attributed score backfills for past events missing from the rolling scores API window.
 
 ### CLV definition
