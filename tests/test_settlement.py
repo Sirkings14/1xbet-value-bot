@@ -57,7 +57,15 @@ class SettlementTests(unittest.TestCase):
     def test_h2h_draw(self):
         event = dict(self.event)
         event["scores"] = [{"name": "Home FC", "score": 1}, {"name": "Away FC", "score": 1}]
-        self.assertEqual(settle_selection(dict(self.signal, selection="Draw"), event), "win")
+        self.assertEqual(settle_selection(dict(self.signal, sport="soccer_epl", selection="Draw"), event), "win")
+
+    def test_unknown_h2h_selection_is_not_assumed_to_be_a_loss(self):
+        self.assertIsNone(settle_selection(dict(self.signal, selection="Home"), self.event))
+
+    def test_tied_score_in_non_soccer_h2h_remains_unresolved(self):
+        event = dict(self.event)
+        event["scores"] = [{"name": "Home FC", "score": 1}, {"name": "Away FC", "score": 1}]
+        self.assertIsNone(settle_selection(dict(self.signal, sport="tennis_atp", selection="Home FC"), event))
 
     def test_totals(self):
         self.assertEqual(settle_selection(dict(self.signal, market="totals", selection="Over 2.5"), self.event), "win")
