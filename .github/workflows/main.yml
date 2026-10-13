@@ -29,6 +29,55 @@ jobs:
         run: python -m py_compile main.py settle_signals.py analytics.py signal_quality.py clv.py telegram_healthcheck.py tests/test_engine.py tests/test_settlement.py tests/test_analytics.py tests/test_signal_quality.py tests/test_clv.py
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Offline settlement and reporting rehearsal (no live odds)
+        env:
+          SIGNALS_FILE: ${{ runner.temp }}/offline-reconciliation/signals.csv
+          MANUAL_RESULTS_FILE: ${{ runner.temp }}/offline-reconciliation/manual_results.csv
+          REPORT_FILE: ${{ runner.temp }}/offline-reconciliation/analysis_report.csv
+          CLV_FILE: ${{ runner.temp }}/offline-reconciliation/clv_snapshots.csv
+        run: |
+          mkdir -p "$RUNNER_TEMP/offline-reconciliation"
+          cp signals.csv "$SIGNALS_FILE"
+          cp manual_results.csv "$MANUAL_RESULTS_FILE"
+          python settle_signals.py --manual-only
+          python signal_quality.py
+          python analytics.py
+          python - <<'PY'
+          import csv
+          import os
+          from pathlib import Path
+
+          ledger_path = Path(os.environ["SIGNALS_FILE"])
+          report_path = Path(os.environ["REPORT_FILE"])
+          with ledger_path.open(newline="", encoding="utf-8") as handle:
+              rows = list(csv.DictReader(handle))
+          with report_path.open(newline="", encoding="utf-8") as handle:
+              report = list(csv.DictReader(handle))
+          settled = [row for row in rows if row.get("status") in {"win", "loss", "push"}]
+          pending = [row for row in rows if row.get("status") not in {"win", "loss", "push"}]
+          overall = next(row for row in report if row["section"] == "overall")
+          outcomes = {row["status"] for row in settled}
+          assert len(rows) == 13, f"expected 13 signals, got {len(rows)}"
+          assert len(settled) == 5, f"expected five settled historical signals, got {len(settled)}"
+          assert len(pending) == 8, f"expected eight pending signals, got {len(pending)}"
+          assert sum(row["status"] == "win" for row in settled) == 2
+          assert sum(row["status"] == "loss" for row in settled) == 3
+          assert sum(row["status"] == "push" for row in settled) == 0
+          assert all(row.get("settlement_method") == "manual_verified" for row in settled)
+          assert all(row.get("settlement_source_url", "").startswith("https://") for row in settled)
+          assert int(overall["settled"]) == 5 and int(overall["pending"]) == 8
+          print("OFFLINE_RECONCILIATION_ASSERTIONS: PASS")
+          print(f"Verified rows: {len(settled)} | Pending rows: {len(pending)} | Outcomes: {dict((x, sum(r['status'] == x for r in settled)) for x in sorted(outcomes))}")
+          print(f"Paper P/L: {overall['profit_units']} stake-pct units | ROI: {overall['roi_percent']}%")
+          PY
+      - name: Upload offline reconciliation output
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-reconciliation-output
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/offline-reconciliation/signals.csv
+            ${{ runner.temp }}/offline-reconciliation/analysis_report.csv
 
   scan:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/rebuild/value-engine-v2') && !contains(github.event.head_commit.message, '[skip ci]'))
