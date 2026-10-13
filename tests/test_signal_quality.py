@@ -20,6 +20,7 @@ class SignalQualityTests(unittest.TestCase):
             "stake_pct": "1.25",
             "sharp_books": "3",
             "sharp_sample_count": "3",
+            "signal_version": "signal-integrity-v1",
             "target_quote_updated_at": "2026-10-13T06:00:00+00:00",
             "sharp_book_keys": "betfair_ex_uk|pinnacle|unibet_eu",
             "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00|unibet_eu=2026-10-13T05:59:45+00:00",
@@ -47,6 +48,21 @@ class SignalQualityTests(unittest.TestCase):
         row["sharp_book_keys"] = "pinnacle|pinnacle"
         errors = validate_row(row, 2)
         self.assertTrue(any("unique sharp_book_keys" in error for error in errors))
+
+    def test_identified_signal_requires_version_label(self):
+        row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
+        row.update({
+            "signal_id": "f" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_quote_timestamps": "betfair_ex_uk=2026-10-13T05:59:00+00:00|pinnacle=2026-10-13T05:59:30+00:00",
+            "sharp_probability_spread_pp": "1.2",
+        })
+        row["signal_version"] = ""
+        errors = validate_row(row, 2)
+        self.assertTrue(any("signal_version" in error for error in errors))
 
     def test_signal_requires_source_quote_timestamps(self):
         row = self.valid_row()
