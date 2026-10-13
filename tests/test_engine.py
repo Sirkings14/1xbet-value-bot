@@ -13,6 +13,7 @@ from signal_quality import validate_file
 
 from main import (
     append_signal,
+    api_budget_available,
     build_signal_id,
     devig_shin,
     find_target_price,
@@ -32,6 +33,45 @@ from main import (
 
 
 class EngineTests(unittest.TestCase):
+    def test_api_budget_preflight_allows_requests_above_reserve(self):
+        response = type("Response", (), {
+            "headers": {
+                "x-requests-remaining": "70",
+                "x-requests-used": "430",
+                "x-requests-last": "0",
+            },
+            "raise_for_status": lambda self: None,
+        })()
+        with patch.object(engine, "ODDS_API_KEY", "unit-test-key"):
+            with patch.object(engine.requests, "get", return_value=response) as get:
+                self.assertTrue(api_budget_available("unit-test"))
+        self.assertIn("/sports/", get.call_args.args[0])
+        self.assertEqual(get.call_args.kwargs["params"], {"apiKey": "unit-test-key"})
+
+    def test_api_budget_preflight_holds_at_or_below_reserve(self):
+        for remaining in ("25", "0"):
+            response = type("Response", (), {
+                "headers": {
+                    "x-requests-remaining": remaining,
+                    "x-requests-used": "475",
+                    "x-requests-last": "0",
+                },
+                "raise_for_status": lambda self: None,
+            })()
+            with self.subTest(remaining=remaining):
+                with patch.object(engine, "ODDS_API_KEY", "unit-test-key"):
+                    with patch.object(engine.requests, "get", return_value=response):
+                        self.assertFalse(api_budget_available("unit-test"))
+
+    def test_api_budget_preflight_fails_closed_without_quota_header(self):
+        response = type("Response", (), {
+            "headers": {},
+            "raise_for_status": lambda self: None,
+        })()
+        with patch.object(engine, "ODDS_API_KEY", "unit-test-key"):
+            with patch.object(engine.requests, "get", return_value=response):
+                self.assertFalse(api_budget_available("unit-test"))
+
     def test_shin_probabilities_sum_to_one(self):
         probs = devig_shin([2.10, 3.40, 3.60])
         self.assertEqual(len(probs), 3)
