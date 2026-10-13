@@ -13,7 +13,9 @@ import requests
 
 from main import (
     API_BOOKMAKERS,
+    ApiBudgetLow,
     MIN_SHARP_BOOKS,
+    api_budget_available,
     extract_bookmaker_markets,
     log_api_quota,
     market_groups,
@@ -88,6 +90,8 @@ def save_snapshots(rows):
 def fetch_sport(sport_key):
     if not ODDS_API_KEY:
         raise RuntimeError("ODDS_API_KEY is not configured")
+    if not api_budget_available(f"clv:{sport_key}"):
+        raise ApiBudgetLow(f"API quota reserve reached before CLV request for {sport_key}")
     response = requests.get(
         f"{ODDS_API_BASE}/sports/{sport_key}/odds/",
         params={"apiKey": ODDS_API_KEY, "bookmakers": ",".join(API_BOOKMAKERS), "markets": "h2h,totals", "oddsFormat": "decimal"},
@@ -168,6 +172,9 @@ def capture():
     for sport in sorted({row.get("sport", "") for row in signals if row.get("sport")}):
         try:
             events_by_id.update(build_event_index(fetch_sport(sport)))
+        except ApiBudgetLow as exc:
+            print(f"{exc}; stopping further CLV requests.")
+            break
         except requests.RequestException as exc:
             print(f"{sport}: CLV API error: {exc}")
     captured = 0
