@@ -40,9 +40,20 @@ SPORTS_TO_SCAN = [
     "baseball_mlb",
 ]
 SHARP_BOOKS = {"pinnacle", "betfair_ex_uk", "unibet_eu"}
+# Request only the bookmakers the model evaluates. The Odds API charges each
+# group of up to 10 explicitly requested bookmakers as one region-equivalent.
+API_BOOKMAKERS = ("pinnacle", "betfair_ex_uk", "unibet_eu", "onexbet")
 # The Odds API's current EU bookmaker key for 1xBet is `onexbet`.
 # Keep legacy aliases for compatibility with older cached/test data.
 TARGET_RETAIL_BOOKS = {"onexbet", "1xbet", "1x"}
+
+
+def log_api_quota(response, endpoint):
+    """Expose provider quota headers in Actions logs without printing credentials."""
+    remaining = response.headers.get("x-requests-remaining", "unknown")
+    used = response.headers.get("x-requests-used", "unknown")
+    last = response.headers.get("x-requests-last", "unknown")
+    print(f"API_QUOTA endpoint={endpoint} last_cost={last} used={used} remaining={remaining}")
 
 
 def normalise_name(name, point=None):
@@ -568,9 +579,10 @@ def fetch_sport(sport_key):
         raise RuntimeError("ODDS_API_KEY is not configured")
     response = requests.get(
         f"{ODDS_API_BASE}/sports/{sport_key}/odds/",
-        params={"apiKey": ODDS_API_KEY, "regions": "eu,uk", "markets": "h2h,totals", "oddsFormat": "decimal"},
+        params={"apiKey": ODDS_API_KEY, "bookmakers": ",".join(API_BOOKMAKERS), "markets": "h2h,totals", "oddsFormat": "decimal"},
         timeout=REQUEST_TIMEOUT,
     )
+    log_api_quota(response, f"odds:{sport_key}")
     response.raise_for_status()
     return response.json()
 
@@ -578,6 +590,7 @@ def fetch_sport(sport_key):
 def run():
     print("=== 1xBet VALUE ENGINE v2 ===")
     print(f"Telegram configured: {'yes' if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else 'NO'}")
+    print(f"Odds request bookmakers: {', '.join(API_BOOKMAKERS)} | markets: h2h,totals")
     print(f"Filters: odds {MIN_ODDS:.2f}-{MAX_ODDS:.2f}, EV >= {MIN_EV:.2f}%, sharp books >= {MIN_SHARP_BOOKS}, max book spread <= {MAX_SHARP_PROB_SPREAD_PP:.1f}pp, market age <= {MAX_MARKET_AGE_SECONDS:.0f}s")
     print(f"Target 1xBet bookmaker keys: {', '.join(sorted(TARGET_RETAIL_BOOKS))}")
     cache = load_cache()
