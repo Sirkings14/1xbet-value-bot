@@ -160,7 +160,8 @@ SIGNAL_FIELDS = [
     "timestamp", "event_id", "sport", "match", "commence_time", "market", "selection",
     "offered_odds", "fair_odds", "fair_probability", "ev_percent", "stake_pct",
     "sharp_books", "sharp_sample_count", "status", "profit_units", "settled_at",
-    "signal_id", "target_book", "sharp_book_keys", "sharp_probability_spread_pp",
+    "signal_id", "target_book", "target_quote_updated_at", "sharp_book_keys",
+    "sharp_quote_timestamps", "sharp_probability_spread_pp",
 ]
 
 
@@ -212,10 +213,17 @@ def append_signal(signal, path=None):
 
 
 def market_is_fresh(snapshot, now=None):
-    """Fail closed when a bookmaker market has no usable or recent source timestamp."""
-    updated = parse_event_time(snapshot.get("last_update"))
-    if updated is None:
+    """Fail closed when a bookmaker market has no usable or timezone-aware source timestamp."""
+    raw = snapshot.get("last_update")
+    if not raw:
         return False
+    try:
+        parsed = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        return False
+    updated = parsed.astimezone(timezone.utc)
     now = now or datetime.now(timezone.utc)
     age_seconds = (now - updated).total_seconds()
     return -60.0 <= age_seconds <= MAX_MARKET_AGE_SECONDS
@@ -279,6 +287,7 @@ def format_alert(event, market, selection, offered, fair_odds, probability, ev, 
         f"Model probability: {probability * 100:.2f}%\nEstimated EV: +{ev:.2f}%\n"
         f"Fractional Kelly (paper sizing only): {stake:.3f}%\nTarget book: {target_book or 'unknown'}\n"
         f"Sharp books: {', '.join(sorted(sharp_books))}\n"
+        f"Target quote updated: {event.get('commence_time', 'unknown') if False else 'timestamp recorded in ledger'}\n"
         f"Maximum sharp probability spread: {probability_spread_pp:.2f} percentage points\n"
         "--------------------\nResearch alert only — verify the live line before acting."
     )
@@ -381,13 +390,30 @@ def valid_market_signature(sport_key, market_key, outcome_names):
     return False
 
 
-def find_target_price(retail_markets, selection):
-    prices = []
+def find_target_quote(retail_markets, selection):
+    """Return the best eligible target quote with its originating snapshot metadata."""
+    candidates = []
     for snapshot in retail_markets:
-        price = snapshot["prices"].get(selection)
-        if price is not None:
-            prices.append((snapshot["book"], price))
-    return max(prices, key=lambda item: item[1]) if prices else None
+        price = snapshot.get("prices", {}).get(selection)
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            continue
+        if price > 1.0 and math.isfinite(price):
+            candidates.append((price, snapshot))
+    if not candidates:
+        return None
+    price, snapshot = max(candidates, key=lambda item: item[0])
+    return snapshot, price
+
+
+def find_target_price(retail_markets, selection):
+    """Compatibility helper returning (book, price) while preserving the source-aware quote path."""
+    quote = find_target_quote(retail_markets, selection)
+    if quote is None:
+        return None
+    snapshot, price = quote
+    return snapshot["book"], price
 
 
 def should_alert(previous, offered, ev):
@@ -459,11 +485,13 @@ def scan_event(event, sent_cache, stats=None):
                 continue
             fair_probs = {name: p / normaliser for name, p in fair_probs.items()}
             for name, probability in fair_probs.items():
-                target = find_target_price(retail_markets, name)
+                target = find_target_quote(retail_markets, name)
                 if target is None:
                     stats["selection_missing_at_1xbet"] = stats.get("selection_missing_at_1xbet", 0) + 1
                     continue
-                target_book, offered = target
+                target_snapshot, offered = target
+                target_book = target_snapshot["book"]
+                target_quote_updated_at = target_snapshot.get("last_update")
                 if not MIN_ODDS <= offered <= MAX_ODDS:
                     stats["odds_out_of_range"] = stats.get("odds_out_of_range", 0) + 1
                     continue
@@ -499,7 +527,12 @@ def scan_event(event, sent_cache, stats=None):
                     "sharp_sample_count": len(complete),
                     "signal_id": build_signal_id(event_id, market_key, name, offered, probability),
                     "target_book": target_book,
+                    "target_quote_updated_at": target_quote_updated_at,
                     "sharp_book_keys": "|".join(sorted(unique_books)),
+                    "sharp_quote_timestamps": "|".join(
+                        f"{snapshot['book']}={snapshot['last_update']}"
+                        for snapshot in sorted(complete, key=lambda item: item["book"])
+                    ),
                     "sharp_probability_spread_pp": round(spread_pp, 4),
                 }
                 if append_signal(signal):
