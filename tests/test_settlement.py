@@ -1,8 +1,13 @@
 import csv
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
+
+import settle_signals as settlement_module
 
 from settle_signals import (
     load_manual_results,
@@ -172,6 +177,33 @@ class SettlementTests(unittest.TestCase):
         self.assertEqual(rows[0]["settlement_source"], "Official competition results")
         self.assertEqual(rows[0]["settlement_source_url"], self.manual["source_url"])
         self.assertEqual(rows[0]["settlement_verified_at"], self.manual["verified_at"])
+
+    def test_manual_only_cli_does_not_call_scores_api_and_dry_run_does_not_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            signals_path = root / "signals.csv"
+            manual_path = root / "manual_results.csv"
+            fields = list(self.signal)
+            with signals_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerow(self.signal)
+            with manual_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(self.manual))
+                writer.writeheader()
+                writer.writerow(self.manual)
+            original = signals_path.read_text(encoding="utf-8")
+            output = StringIO()
+            with patch.object(settlement_module, "SIGNALS_FILE", signals_path), \\
+                 patch.object(settlement_module, "MANUAL_RESULTS_FILE", manual_path), \\
+                 patch.object(settlement_module, "fetch_scores") as scores_api:
+                with redirect_stdout(output):
+                    result = settlement_module.main(["--manual-only", "--dry-run"])
+            self.assertEqual(result, 0)
+            scores_api.assert_not_called()
+            self.assertEqual(signals_path.read_text(encoding="utf-8"), original)
+            self.assertIn("manual-only", output.getvalue())
+            self.assertIn("Dry run", output.getvalue())
 
     def test_api_result_takes_precedence_over_manual_fallback(self):
         now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
