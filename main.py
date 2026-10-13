@@ -361,6 +361,7 @@ def market_groups(sharp_markets, market_key):
                 groups.setdefault(names, []).append({
                     "book": snapshot["book"],
                     "prices": line_prices,
+                    "last_update": snapshot.get("last_update"),
                 })
             continue
 
