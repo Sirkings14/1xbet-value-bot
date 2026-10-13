@@ -69,9 +69,11 @@ def binary_rows(rows):
 
 
 def max_losing_streak(rows):
+    # Outcomes must be evaluated in settlement order, not signal creation order.
+    ordered = sorted(rows, key=lambda r: (r.get("settled_at", ""), r.get("signal_id", "")))
     streak = best = 0
-    for row in rows:
-        status = str(row.get("status", "")).lower()
+    for row in ordered:
+        status = str(row.get("status", "")).strip().lower()
         if status == "loss":
             streak += 1
             best = max(best, streak)
