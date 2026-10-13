@@ -1,7 +1,9 @@
 name: 1xBet Value Engine
 
 on:
-  # Automatic polling is intentionally paused until API quota is upgraded.
+  # Free-tier mode: daily scans, with a no-credit quota preflight and protected reserve.
+  schedule:
+    - cron: '5 12 * * *'
   workflow_dispatch:
   push:
     branches: [main, 'rebuild/**']
