@@ -182,8 +182,13 @@ def _bucket_odds(odds):
 def grouped_report(rows, field, bucket=None):
     groups = defaultdict(list)
     for row in rows:
-        value = _num(row, field) if bucket else row.get(field, "unknown") or "unknown"
-        key = bucket(value) if bucket else value
+        if bucket:
+            value = _num(row, field)
+            key = bucket(value)
+        elif field == "signal_version":
+            key = row.get(field) or "legacy_unknown"
+        else:
+            key = row.get(field, "unknown") or "unknown"
         groups[key].append(row)
     return [{"group": key, **summary(groups[key])} for key in sorted(groups, key=str)]
 
@@ -221,7 +226,7 @@ def print_report(report):
     if not overall:
         print("No settled signals yet.")
         return
-    print("=== PAPER-TRADING PERFORMANCE ===")
+    print("=== PAPER-TRADING LEDGER (COMBINED VERSIONS; USE COHORT BREAKDOWN FOR MODEL EVALUATION) ===")
     print(f"Settled: {overall['settled']} | Pending: {overall['pending']} | W/L/P: {overall['wins']}/{overall['losses']}/{overall['pushes']}")
     print(f"Overdue pending: {overall['overdue_pending']} | Oldest pending: {overall['oldest_pending_age_hours']:.2f} hours")
     print(f"P/L units: {overall['profit_units']:.4f} | ROI: {overall['roi_percent']:.2f}%")
