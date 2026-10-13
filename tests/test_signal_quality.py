@@ -28,6 +28,50 @@ class SignalQualityTests(unittest.TestCase):
     def test_valid_row_passes(self):
         self.assertEqual(validate_row(self.valid_row(), 2), [])
 
+    def test_signal_provenance_fields_are_validated(self):
+        row = self.valid_row()
+        row.update({
+            "signal_id": "a" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_probability_spread_pp": "2.5",
+        })
+        self.assertEqual(validate_row(row, 2), [])
+
+        row["sharp_book_keys"] = "pinnacle|pinnacle"
+        errors = validate_row(row, 2)
+        self.assertTrue(any("unique sharp_book_keys" in error for error in errors))
+
+    def test_signal_with_excessive_probability_disagreement_is_rejected(self):
+        row = self.valid_row()
+        row.update({
+            "signal_id": "b" * 24,
+            "target_book": "onexbet",
+            "sharp_book_keys": "betfair_ex_uk|pinnacle",
+            "sharp_probability_spread_pp": "9.5",
+        })
+        errors = validate_row(row, 2)
+        self.assertTrue(any("probability spread exceeds" in error for error in errors))
+
+    def test_duplicate_signal_ids_are_rejected_in_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "signals.csv"
+            row = self.valid_row()
+            row.update({
+                "signal_id": "c" * 24,
+                "target_book": "onexbet",
+                "sharp_book_keys": "betfair_ex_uk|pinnacle",
+                "sharp_probability_spread_pp": "1.0",
+            })
+            fields = list(row)
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerow(row)
+                writer.writerow(row)
+            errors = validate_file(path)
+            self.assertTrue(any("duplicate signal_id" in error for error in errors))
+
     def test_impossible_odds_rejected(self):
         row = self.valid_row()
         row["offered_odds"] = "1"
