@@ -1,11 +1,23 @@
+import csv
+import tempfile
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
 
-from settle_signals import settle_selection
+from settle_signals import (
+    load_manual_results,
+    manual_result_matches_signal,
+    settle_rows,
+    settle_selection,
+    settlement_audit,
+    validate_manual_result,
+)
 
 
 class SettlementTests(unittest.TestCase):
     def setUp(self):
         self.event = {
+            "id": "evt-1",
             "completed": True,
             "home_team": "Home FC",
             "away_team": "Away FC",
@@ -14,35 +26,126 @@ class SettlementTests(unittest.TestCase):
                 {"name": "Away FC", "score": "1"},
             ],
         }
+        self.signal = {
+            "event_id": "evt-1",
+            "match": "Home FC vs Away FC",
+            "market": "h2h",
+            "selection": "Home FC",
+            "offered_odds": "2.10",
+            "stake_pct": "1.0",
+            "status": "",
+        }
+        self.manual = {
+            "event_id": "evt-1",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "home_score": 2,
+            "away_score": 1,
+            "completed": "true",
+            "source_name": "Official competition results",
+            "source_url": "https://example.com/official-results/evt-1",
+            "verified_at": "2026-10-13T06:00:00+00:00",
+        }
 
     def test_h2h_home_win(self):
-        self.assertEqual(
-            settle_selection({"market": "h2h", "selection": "Home FC"}, self.event),
-            "win",
-        )
+        self.assertEqual(settle_selection(self.signal, self.event), "win")
 
     def test_h2h_away_loss(self):
-        self.assertEqual(
-            settle_selection({"market": "h2h", "selection": "Away FC"}, self.event),
-            "loss",
-        )
+        row = dict(self.signal, selection="Away FC")
+        self.assertEqual(settle_selection(row, self.event), "loss")
+
+    def test_h2h_draw(self):
+        event = dict(self.event)
+        event["scores"] = [{"name": "Home FC", "score": 1}, {"name": "Away FC", "score": 1}]
+        self.assertEqual(settle_selection(dict(self.signal, selection="Draw"), event), "win")
 
     def test_totals(self):
-        self.assertEqual(
-            settle_selection({"market": "totals", "selection": "Over 2.5"}, self.event),
-            "win",
-        )
-        self.assertEqual(
-            settle_selection({"market": "totals", "selection": "Under 2.5"}, self.event),
-            "loss",
-        )
+        self.assertEqual(settle_selection(dict(self.signal, market="totals", selection="Over 2.5"), self.event), "win")
+        self.assertEqual(settle_selection(dict(self.signal, market="totals", selection="Under 2.5"), self.event), "loss")
 
     def test_incomplete_event_is_not_settled(self):
+        event = dict(self.event, completed=False)
+        self.assertIsNone(settle_selection(self.signal, event))
+
+    def test_non_finite_scores_are_ignored(self):
         event = dict(self.event)
-        event["completed"] = False
-        self.assertIsNone(
-            settle_selection({"market": "h2h", "selection": "Home FC"}, event)
-        )
+        event["scores"] = [{"name": "Home FC", "score": "nan"}, {"name": "Away FC", "score": "1"}]
+        self.assertIsNone(settle_selection(self.signal, event))
+
+    def test_manual_result_requires_source_and_timezone_aware_verification(self):
+        self.assertEqual(validate_manual_result(self.manual), [])
+        invalid = dict(self.manual, source_url="javascript:alert(1)", verified_at="2026-10-13T06:00:00")
+        errors = validate_manual_result(invalid)
+        self.assertTrue(any("source_url" in error for error in errors))
+        self.assertTrue(any("verified_at" in error for error in errors))
+
+    def test_manual_csv_loads_valid_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manual_results.csv"
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(self.manual))
+                writer.writeheader()
+                writer.writerow(self.manual)
+            results, errors = load_manual_results(path)
+            self.assertEqual(errors, [])
+            self.assertIn("evt-1", results)
+            self.assertEqual(results["evt-1"]["home_score"], 2.0)
+
+    def test_duplicate_manual_event_ids_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manual_results.csv"
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(self.manual))
+                writer.writeheader()
+                writer.writerow(self.manual)
+                writer.writerow(self.manual)
+            results, errors = load_manual_results(path)
+            self.assertNotIn("evt-1", results)
+            self.assertTrue(any("duplicate event_id" in error for error in errors))
+
+    def test_manual_result_must_match_signal_teams(self):
+        self.assertTrue(manual_result_matches_signal(self.signal, self.manual))
+        wrong = dict(self.manual, away_team="Different FC")
+        self.assertFalse(manual_result_matches_signal(self.signal, wrong))
+
+    def test_verified_manual_result_settles_pending_signal_with_provenance(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        rows = settle_rows([self.signal], {}, {"evt-1": self.manual}, now=now)
+        self.assertEqual(rows[0]["status"], "win")
+        self.assertAlmostEqual(float(rows[0]["profit_units"]), 1.1)
+        self.assertEqual(rows[0]["settlement_method"], "manual_verified")
+        self.assertEqual(rows[0]["settlement_source"], "Official competition results")
+        self.assertEqual(rows[0]["settlement_source_url"], self.manual["source_url"])
+        self.assertEqual(rows[0]["settlement_verified_at"], self.manual["verified_at"])
+
+    def test_api_result_takes_precedence_over_manual_fallback(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        api_event = dict(self.event)
+        api_event["scores"] = [{"name": "Home FC", "score": 0}, {"name": "Away FC", "score": 1}]
+        rows = settle_rows([self.signal], {"evt-1": api_event}, {"evt-1": self.manual}, now=now)
+        self.assertEqual(rows[0]["status"], "loss")
+        self.assertEqual(rows[0]["settlement_method"], "scores_api")
+
+    def test_settled_rows_are_not_overwritten(self):
+        settled = dict(self.signal, status="loss", profit_units="-1.000000", settled_at="2026-10-12T00:00:00+00:00", settlement_method="manual_verified")
+        rows = settle_rows([settled], {"evt-1": self.event}, {"evt-1": self.manual})
+        self.assertEqual(rows[0]["status"], "loss")
+        self.assertEqual(rows[0]["profit_units"], "-1.000000")
+        self.assertEqual(rows[0]["settlement_method"], "manual_verified")
+
+    def test_audit_counts_past_kickoffs_still_pending(self):
+        now = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+        rows = [
+            dict(self.signal, commence_time="2026-10-12T07:00:00+00:00"),
+            dict(self.signal, event_id="future", commence_time="2026-10-14T07:00:00+00:00"),
+            dict(self.signal, event_id="settled", status="win"),
+        ]
+        audit = settlement_audit(rows, now=now)
+        self.assertEqual(audit["signals"], 3)
+        self.assertEqual(audit["settled"], 1)
+        self.assertEqual(audit["pending"], 2)
+        self.assertEqual(audit["overdue_pending"], 1)
+        self.assertEqual(audit["oldest_pending_age_hours"], 24.0)
 
 
 if __name__ == "__main__":
