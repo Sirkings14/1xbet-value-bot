@@ -87,6 +87,14 @@ class SettlementTests(unittest.TestCase):
         self.assertTrue(any("source_url" in error for error in errors))
         self.assertTrue(any("verified_at" in error for error in errors))
 
+    def test_repository_backfill_contains_five_source_attributed_results(self):
+        path = Path(__file__).resolve().parent.parent / "manual_results.csv"
+        results, errors = load_manual_results(path)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 5)
+        self.assertIn("22c9b2c43cbe1334381269550dab78e6", results)
+        self.assertIn("0d9ff865c4599c72a746da08260279b3", results)
+
     def test_manual_csv_loads_valid_result(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "manual_results.csv"
