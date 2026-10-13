@@ -30,6 +30,7 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Uses median sharp-book consensus instead of a simple mean.
 - Requires at least two complete sharp-book observations for a signal.
 - Keeps different market/line signatures separate so incomplete books are not mixed together.
+- Separates each totals line into its own Over/Under market and rejects incomplete soccer 1X2 outcome sets.
 - Stable signal IDs no longer include the current 1xBet odds, preventing duplicate signals when prices move.
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
