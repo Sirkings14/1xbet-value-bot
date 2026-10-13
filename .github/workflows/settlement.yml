@@ -1,8 +1,7 @@
 name: 1xBet Settlement and Reporting
 
 on:
-  schedule:
-    - cron: '23 */6 * * *'
+  # Automatic score polling is paused until API quota is upgraded.
   workflow_dispatch:
 
 concurrency:
