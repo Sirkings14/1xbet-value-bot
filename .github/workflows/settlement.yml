@@ -1,0 +1,48 @@
+name: 1xBet Settlement and Reporting
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: 1xbet-value-engine
+  cancel-in-progress: false
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Settle pending signals
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python settle_signals.py
+      - name: Validate signal data
+        run: python signal_quality.py
+      - name: Generate performance report
+        run: python analytics.py
+      - name: Persist settlement and report
+        run: |
+          git config user.name "1xBet Value Engine"
+          git config user.email "engine@users.noreply.github.com"
+          for file in signals.csv analysis_report.csv; do
+            if [ -f "$file" ]; then
+              git add "$file"
+            fi
+          done
+          if git diff --cached --quiet; then
+            echo "No settlement or report changes."
+            exit 0
+          fi
+          git commit -m "Update paper settlements and report [skip ci]"
+          git push
