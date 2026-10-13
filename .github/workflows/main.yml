@@ -1,8 +1,7 @@
 name: 1xBet Value Engine
 
 on:
-  schedule:
-    - cron: '*/10 8-23 * * *'
+  # Automatic polling is intentionally paused until API quota is upgraded.
   workflow_dispatch:
   push:
     branches: [main, 'rebuild/**']
