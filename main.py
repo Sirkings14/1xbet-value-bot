@@ -31,18 +31,25 @@ RE_ALERT_ODDS_DELTA = float(os.getenv("RE_ALERT_ODDS_DELTA", "0.05"))
 CACHE_FILE = Path("sent_alerts_cache.csv")
 SIGNALS_FILE = Path("signals.csv")
 
+# Free-tier mode: focus on the three soccer leagues with the most signal history.
+# This reduces default odds polling to at most 6 credits per daily sweep when both
+# markets are present for all three sports.
 SPORTS_TO_SCAN = [
     "soccer_epl",
     "soccer_spain_la_liga",
     "soccer_uefa_champs_league",
-    "soccer_usa_mls",
-    "tennis_atp_us_open",
-    "baseball_mlb",
 ]
 SHARP_BOOKS = {"pinnacle", "betfair_ex_uk", "unibet_eu"}
 # Request only the bookmakers the model evaluates. The Odds API charges each
 # group of up to 10 explicitly requested bookmakers as one region-equivalent.
 API_BOOKMAKERS = ("pinnacle", "betfair_ex_uk", "unibet_eu", "onexbet")
+API_MIN_REMAINING_CREDITS = int(os.getenv("API_MIN_REMAINING_CREDITS", "25"))
+
+
+class ApiBudgetLow(RuntimeError):
+    """Raised when the remaining provider quota reaches the protected reserve."""
+
+
 # The Odds API's current EU bookmaker key for 1xBet is `onexbet`.
 # Keep legacy aliases for compatibility with older cached/test data.
 TARGET_RETAIL_BOOKS = {"onexbet", "1xbet", "1x"}
@@ -54,6 +61,38 @@ def log_api_quota(response, endpoint):
     used = response.headers.get("x-requests-used", "unknown")
     last = response.headers.get("x-requests-last", "unknown")
     print(f"API_QUOTA endpoint={endpoint} last_cost={last} used={used} remaining={remaining}")
+
+
+def api_budget_available(endpoint="api"):
+    """Check quota via the provider's no-credit /sports endpoint; fail closed if unknown."""
+    if not ODDS_API_KEY:
+        raise RuntimeError("ODDS_API_KEY is not configured")
+    try:
+        response = requests.get(
+            f"{ODDS_API_BASE}/sports/",
+            params={"apiKey": ODDS_API_KEY},
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"API_BUDGET_CHECK_FAILED endpoint={endpoint}: {exc}; skipping paid-credit request")
+        return False
+
+    log_api_quota(response, f"budget-check:{endpoint}")
+    raw_remaining = response.headers.get("x-requests-remaining")
+    try:
+        remaining = int(raw_remaining)
+    except (TypeError, ValueError):
+        print(f"API_BUDGET_UNKNOWN endpoint={endpoint}; skipping paid-credit request")
+        return False
+
+    if remaining <= API_MIN_REMAINING_CREDITS:
+        print(
+            f"API_BUDGET_HOLD endpoint={endpoint} remaining={remaining} "
+            f"reserve={API_MIN_REMAINING_CREDITS}; skipping paid-credit request"
+        )
+        return False
+    return True
 
 
 def normalise_name(name, point=None):
@@ -577,6 +616,8 @@ def scan_event(event, sent_cache, stats=None):
 def fetch_sport(sport_key):
     if not ODDS_API_KEY:
         raise RuntimeError("ODDS_API_KEY is not configured")
+    if not api_budget_available(f"odds:{sport_key}"):
+        raise ApiBudgetLow(f"API quota reserve reached before odds request for {sport_key}")
     response = requests.get(
         f"{ODDS_API_BASE}/sports/{sport_key}/odds/",
         params={"apiKey": ODDS_API_KEY, "bookmakers": ",".join(API_BOOKMAKERS), "markets": "h2h,totals", "oddsFormat": "decimal"},
@@ -603,6 +644,9 @@ def run():
             print(f"{sport}: {len(events)} events")
             for event in events:
                 scan_event(event, cache, stats)
+        except ApiBudgetLow as exc:
+            print(f"{exc}; stopping the rest of this scan.")
+            break
         except requests.RequestException as exc:
             print(f"{sport}: API error: {exc}")
         except Exception as exc:
