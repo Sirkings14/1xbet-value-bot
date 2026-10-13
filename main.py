@@ -22,6 +22,7 @@ KELLY_FRACTION = float(os.getenv("KELLY_FRACTION", "0.25"))
 MIN_SHARP_BOOKS = int(os.getenv("MIN_SHARP_BOOKS", "2"))
 MAX_SHARP_PROB_SPREAD_PP = float(os.getenv("MAX_SHARP_PROB_SPREAD_PP", "8.0"))
 MAX_MARKET_AGE_SECONDS = float(os.getenv("MAX_MARKET_AGE_SECONDS", "900"))
+SIGNAL_VERSION = "signal-integrity-v1"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
 MAX_EVENT_AGE_MINUTES = float(os.getenv("MAX_EVENT_AGE_MINUTES", "0"))
 RE_ALERT_EV_DELTA = float(os.getenv("RE_ALERT_EV_DELTA", "1.0"))
@@ -160,7 +161,7 @@ SIGNAL_FIELDS = [
     "timestamp", "event_id", "sport", "match", "commence_time", "market", "selection",
     "offered_odds", "fair_odds", "fair_probability", "ev_percent", "stake_pct",
     "sharp_books", "sharp_sample_count", "status", "profit_units", "settled_at",
-    "signal_id", "target_book", "target_quote_updated_at", "sharp_book_keys",
+    "signal_id", "signal_version", "target_book", "target_quote_updated_at", "sharp_book_keys",
     "sharp_quote_timestamps", "sharp_probability_spread_pp",
 ]
 
@@ -526,6 +527,7 @@ def scan_event(event, sent_cache, stats=None):
                     "sharp_books": len(unique_books),
                     "sharp_sample_count": len(complete),
                     "signal_id": build_signal_id(event_id, market_key, name, offered, probability),
+                    "signal_version": SIGNAL_VERSION,
                     "target_book": target_book,
                     "target_quote_updated_at": target_quote_updated_at,
                     "sharp_book_keys": "|".join(sorted(unique_books)),
