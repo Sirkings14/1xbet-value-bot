@@ -194,11 +194,11 @@ class SettlementTests(unittest.TestCase):
                 writer.writerow(self.manual)
             original = signals_path.read_text(encoding="utf-8")
             output = StringIO()
-            with patch.object(settlement_module, "SIGNALS_FILE", signals_path), \\
-                 patch.object(settlement_module, "MANUAL_RESULTS_FILE", manual_path), \\
-                 patch.object(settlement_module, "fetch_scores") as scores_api:
-                with redirect_stdout(output):
-                    result = settlement_module.main(["--manual-only", "--dry-run"])
+            with patch.object(settlement_module, "SIGNALS_FILE", signals_path):
+                with patch.object(settlement_module, "MANUAL_RESULTS_FILE", manual_path):
+                    with patch.object(settlement_module, "fetch_scores") as scores_api:
+                        with redirect_stdout(output):
+                            result = settlement_module.main(["--manual-only", "--dry-run"])
             self.assertEqual(result, 0)
             scores_api.assert_not_called()
             self.assertEqual(signals_path.read_text(encoding="utf-8"), original)
