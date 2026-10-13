@@ -12,6 +12,7 @@ import settle_signals as settlement_module
 from settle_signals import (
     load_manual_results,
     manual_result_matches_signal,
+    pending_sports,
     settle_rows,
     settle_selection,
     settlement_audit,
@@ -52,6 +53,17 @@ class SettlementTests(unittest.TestCase):
             "source_url": "https://example.com/official-results/evt-1",
             "verified_at": "2026-10-13T06:00:00+00:00",
         }
+
+    def test_pending_sports_skips_already_settled_and_invalid_rows(self):
+        rows = [
+            {"event_id": "a", "sport": "soccer_epl", "status": "win"},
+            {"event_id": "b", "sport": "soccer_usa_mls", "status": ""},
+            {"event_id": "c", "sport": "soccer_usa_mls", "status": "loss"},
+            {"event_id": "d", "sport": "tennis_atp_us_open", "status": ""},
+            {"event_id": "", "sport": "baseball_mlb", "status": ""},
+            {"event_id": "e", "sport": "", "status": ""},
+        ]
+        self.assertEqual(pending_sports(rows), ["soccer_usa_mls", "tennis_atp_us_open"])
 
     def test_h2h_home_win(self):
         self.assertEqual(settle_selection(self.signal, self.event), "win")
