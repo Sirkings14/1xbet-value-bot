@@ -75,13 +75,20 @@ def settle_selection(row, event):
     home_score, away_score = scores[home], scores[away]
 
     if market == "h2h":
+        allowed = {str(home).casefold(), str(away).casefold(), "draw"}
+        if selection.casefold() not in allowed:
+            return None
         if home_score == away_score:
+            # A draw only settles a 3-way soccer head-to-head market. For other
+            # sports, an unexpected tie is unresolved rather than a false loss.
+            if not str(row.get("sport") or "").lower().startswith("soccer_"):
+                return None
             winner = "Draw"
         elif home_score > away_score:
             winner = home
         else:
             winner = away
-        return "win" if selection.casefold() == winner.casefold() else "loss"
+        return "win" if selection.casefold() == str(winner).casefold() else "loss"
 
     if market == "totals":
         match = TOTALS_RE.fullmatch(selection)
@@ -149,6 +156,7 @@ def load_manual_results(path=MANUAL_RESULTS_FILE):
         return {}, []
     results = {}
     errors = []
+    seen_event_ids = set()
     duplicate_ids = set()
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
@@ -163,11 +171,14 @@ def load_manual_results(path=MANUAL_RESULTS_FILE):
         for row_number, result in enumerate(reader, start=2):
             row_errors = validate_manual_result(result, row_number)
             event_id = str(result.get("event_id") or "").strip()
-            if event_id and event_id in results:
+            if event_id and event_id in seen_event_ids:
                 duplicate_ids.add(event_id)
                 results.pop(event_id, None)
                 errors.append(f"row {row_number}: duplicate event_id '{event_id}'; all rows for this event ignored")
-            elif event_id in duplicate_ids:
+                continue
+            if event_id:
+                seen_event_ids.add(event_id)
+            if event_id in duplicate_ids:
                 errors.append(f"row {row_number}: duplicate event_id '{event_id}'; row ignored")
             elif row_errors:
                 errors.extend(row_errors)
@@ -263,7 +274,10 @@ def settle_rows(rows, events_by_id, manual_results=None, now=None):
 def settlement_audit(rows, now=None):
     now = now or datetime.now(timezone.utc)
     settled = [row for row in rows if str(row.get("status") or "").strip().lower() in {"win", "loss", "push"}]
-    pending = [row for row in rows if row not in settled]
+    pending = [
+        row for row in rows
+        if str(row.get("status") or "").strip().lower() not in {"win", "loss", "push"}
+    ]
     overdue_ages = []
     for row in pending:
         commence = parse_event_time(row.get("commence_time"))
