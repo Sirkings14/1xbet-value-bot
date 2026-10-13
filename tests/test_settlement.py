@@ -126,20 +126,27 @@ class SettlementTests(unittest.TestCase):
             manual_results=manual,
             now=datetime(2026, 10, 13, 7, 15, tzinfo=timezone.utc),
         )
+        manual_ids = set(manual)
         results_by_id = {
             row["event_id"]: row
             for row in settled
-            if row.get("status") in {"win", "loss", "push"}
+            if row.get("event_id") in manual_ids and row.get("status") in {"win", "loss", "push"}
         }
-        self.assertEqual(len(results_by_id), 5)
-        self.assertEqual(len(settled) - len(results_by_id), 8)
+        self.assertEqual(set(results_by_id), manual_ids)
         self.assertEqual(results_by_id["22c9b2c43cbe1334381269550dab78e6"]["status"], "win")
         self.assertEqual(results_by_id["da3d3fec3e0b6b939910427a76ecfb76"]["status"], "loss")
         self.assertEqual(results_by_id["5866dae1e72b96ab74508039cd3dcca7"]["status"], "loss")
         self.assertEqual(results_by_id["02e6c0ccb11bb7ce78989ce49d67110b"]["status"], "loss")
         self.assertEqual(results_by_id["0d9ff865c4599c72a746da08260279b3"]["status"], "win")
-        self.assertTrue(all(row["settlement_method"] == "manual_verified" for row in results_by_id.values()))
+        self.assertTrue(all(row["settlement_method"] in {"manual_verified", "scores_api"} for row in results_by_id.values()))
         self.assertTrue(all(row["settlement_source_url"].startswith("https://") for row in results_by_id.values()))
+
+        # The checked-in ledger now includes additional live-collected signals.
+        # With no scores API events supplied here, unrelated rows must retain
+        # their existing status; only matching pending manual rows may change.
+        for before, after in zip(rows, settled):
+            if before.get("event_id") not in manual_ids:
+                self.assertEqual(after.get("status", ""), before.get("status", ""))
 
     def test_manual_csv_loads_valid_result(self):
         with tempfile.TemporaryDirectory() as directory:
