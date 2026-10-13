@@ -6,6 +6,7 @@ timezone-aware verification timestamp. This script never places wagers.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import math
 import os
@@ -353,32 +354,53 @@ def report(rows, now=None):
     print(f"Paper P/L: {profit:.4f} stake-pct units | ROI: {roi:.2f}%")
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Settle paper signals from completed scores.")
+    parser.add_argument(
+        "--manual-only",
+        action="store_true",
+        help="Use only the verified manual_results.csv backfill; do not call the scores API.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the resulting settlement summary without writing signals.csv.",
+    )
+    args = parser.parse_args(argv)
+
     rows, fields = load_rows()
     if not rows:
         print("No signals.csv yet; nothing to settle.")
-        return
+        return 0
 
     manual_results, manual_errors = load_manual_results()
     for error in manual_errors:
         print(f"MANUAL_RESULTS_WARNING: {error}")
 
-    sports = {r.get("sport", "") for r in rows if r.get("event_id")}
     events = {}
-    for sport in sorted(sports):
-        if not sport:
-            continue
-        try:
-            for event in fetch_scores(sport):
-                if event.get("id"):
-                    events[event.get("id")] = event
-        except (requests.RequestException, RuntimeError, ValueError) as exc:
-            print(f"{sport}: scores API unavailable: {exc}")
+    if args.manual_only:
+        print("Settlement mode: manual-only (scores API disabled).")
+    else:
+        sports = {r.get("sport", "") for r in rows if r.get("event_id")}
+        for sport in sorted(sports):
+            if not sport:
+                continue
+            try:
+                for event in fetch_scores(sport):
+                    if event.get("id"):
+                        events[event.get("id")] = event
+            except (requests.RequestException, RuntimeError, ValueError) as exc:
+                print(f"{sport}: scores API unavailable: {exc}")
 
     rows = settle_rows(rows, events, manual_results=manual_results)
-    save_rows(rows, fields)
+    if args.dry_run:
+        print("Dry run: signals.csv was not modified.")
+    else:
+        save_rows(rows, fields)
+        print(f"Updated settlement ledger: {SIGNALS_FILE}")
     report(rows)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
