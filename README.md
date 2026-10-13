@@ -79,9 +79,11 @@ Required repository secrets:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-The scheduled workflow runs the test gate first. Only after tests pass does it run the scanner, capture pre-start CLV, settle completed signals, validate the resulting ledger, and generate the performance report.
+The odds workflow runs the test gate first. Only after tests pass does it run the scanner, capture pre-start CLV, validate the ledger, and generate the performance report. A separate workflow settles pending events and refreshes analytics every six hours (and can be run manually), keeping score requests out of each odds scan.
 
-The scanner schedule currently polls every five minutes during the configured UTC window. GitHub Actions scheduling can be delayed, so a CLV snapshot is a reference point rather than a guaranteed official bookmaker closing price.
+The odds scanner polls every ten minutes from 08:00 through 23:59 UTC. It requests only four bookmakers used by this model: Pinnacle, Betfair Exchange UK, Unibet EU, and 1xBet (`onexbet`). The Odds API treats up to ten requested bookmakers as one region-equivalent for quota costing; with two markets, this is at most 2 credits per sport request. With six sports, the scheduled window produces up to about 34,560 odds credits per 30-day month if both markets are returned for every sport on every scan. Actual usage can be lower when markets are unavailable. The separately scheduled settlement/report workflow runs every six hours and queries only sports with pending signals; at six sports continuously pending, that is at most about 1,440 score credits per 30-day month. CLV usage varies with signals inside the pre-start capture window. The scanner logs provider quota headers (`x-requests-last`, `x-requests-used`, and `x-requests-remaining`) so real consumption can be checked in GitHub Actions.
+
+GitHub Actions scheduling can be delayed, so a CLV snapshot is a reference point rather than a guaranteed official bookmaker closing price.
 
 ## Data files
 
