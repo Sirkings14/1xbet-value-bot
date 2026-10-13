@@ -214,6 +214,13 @@ def manual_result_matches_signal(row, result):
     return bool(expected) and _normalise_team(expected) == _normalise_team(supplied)
 
 
+def manual_result_is_after_kickoff(row, result):
+    """A manual score can only settle an event whose kickoff predates verification."""
+    kickoff = parse_event_time(row.get("commence_time"))
+    verified_at = parse_event_time(result.get("verified_at"))
+    return kickoff is not None and verified_at is not None and kickoff < verified_at
+
+
 def settle_rows(rows, events_by_id, manual_results=None, now=None):
     """Settle pending rows only; preserve settled records and append provenance fields."""
     manual_results = manual_results or {}
@@ -235,7 +242,11 @@ def settle_rows(rows, events_by_id, manual_results=None, now=None):
 
         if not result:
             manual = manual_results.get(event_id)
-            if manual and manual_result_matches_signal(row, manual):
+            if (
+                manual
+                and manual_result_matches_signal(row, manual)
+                and manual_result_is_after_kickoff(row, manual)
+            ):
                 manual_event = manual_result_to_event(manual)
                 result = settle_selection(row, manual_event)
                 if result:
