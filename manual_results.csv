@@ -1,1 +1,6 @@
 event_id,home_team,away_team,home_score,away_score,completed,source_name,source_url,verified_at
+22c9b2c43cbe1334381269550dab78e6,Manchester United,Tottenham Hotspur,1,1,true,Reuters,https://www.reuters.com/sports/soccer/spurs-show-fight-uniteds-struggles-deepen-old-trafford-2026-10-10/,2026-10-13T07:12:00+00:00
+da3d3fec3e0b6b939910427a76ecfb76,Espanyol,Elche CF,1,3,true,LALIGA official match page,https://iaas-public-front-pro.laliga.com/partido/temporada-2026-2027-laliga-ea-sports-rcd-espanyol-de-barcelona-elche-cf-7,2026-10-13T07:12:00+00:00
+5866dae1e72b96ab74589ce49d3dcca7,Atlético Madrid,Real Madrid,2,1,true,LALIGA official match page,https://www.laliga.com/en-ES/partidazos/el-derbi-de-madrid,2026-10-13T07:12:00+00:00
+02e6c0ccb11bb7ce78989ce49d67110b,Aston Villa,Brentford,2,2,true,Premier League official match report,https://www.premierleague.com/en/news/4730393/brentford-earn-draw-at-aston-villa-in-four-goal-thriller,2026-10-13T07:12:00+00:00
+0d9ff865c4599c72a746da08260279b3,Chicago Fire,Vancouver Whitecaps FC,3,1,true,MLS official match recap,https://www.mlssoccer.com/competitions/mls-regular-season/2026/matches/chivsvan-10-06-2026/,2026-10-13T07:12:00+00:00
