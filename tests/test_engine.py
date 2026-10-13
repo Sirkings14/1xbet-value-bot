@@ -14,6 +14,7 @@ from main import (
     build_signal_id,
     devig_shin,
     find_target_price,
+    find_target_quote,
     fractional_kelly,
     is_event_eligible,
     market_groups,
@@ -57,6 +58,16 @@ class EngineTests(unittest.TestCase):
             {"book": "1x", "prices": {"Home": 2.25}},
         ]
         self.assertEqual(find_target_price(markets, "Home"), ("1x", 2.25))
+
+    def test_target_quote_preserves_timestamp_provenance(self):
+        markets = [
+            {"book": "onexbet", "last_update": "2026-10-13T06:00:00+00:00", "prices": {"Home": 2.20}},
+            {"book": "legacy", "last_update": "2026-10-13T06:00:05+00:00", "prices": {"Home": 2.25}},
+        ]
+        snapshot, price = find_target_quote(markets, "Home")
+        self.assertEqual(price, 2.25)
+        self.assertEqual(snapshot["book"], "legacy")
+        self.assertEqual(snapshot["last_update"], "2026-10-13T06:00:05+00:00")
 
     def test_market_groups_do_not_mix_totals_lines(self):
         markets = [
@@ -187,6 +198,12 @@ class EngineTests(unittest.TestCase):
                 with patch.object(engine, "send_telegram", return_value=None):
                     engine.scan_event(event, cache, stats)
         self.assertTrue(persisted.called)
+        saved_signal = persisted.call_args.args[0]
+        self.assertEqual(saved_signal["target_quote_updated_at"], updated)
+        self.assertEqual(
+            saved_signal["sharp_quote_timestamps"],
+            f"betfair_ex_uk={updated}|pinnacle={updated}",
+        )
         self.assertEqual(stats.get("signals_recorded"), 1)
         self.assertEqual(stats.get("telegram_not_configured"), 1)
         self.assertIn("evt-signal|h2h|Home FC", cache)
