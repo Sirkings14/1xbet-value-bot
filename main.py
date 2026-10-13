@@ -275,7 +275,7 @@ def send_telegram(message):
 
 
 def format_alert(event, market, selection, offered, fair_odds, probability, ev, stake, sharp_books,
-                 target_book="", probability_spread_pp=0.0):
+                 target_book="", probability_spread_pp=0.0, target_quote_updated_at=""):
     home = event.get("home_team", "Home")
     away = event.get("away_team", "Away")
     start = event.get("commence_time", "unknown")
@@ -287,7 +287,7 @@ def format_alert(event, market, selection, offered, fair_odds, probability, ev, 
         f"Model probability: {probability * 100:.2f}%\nEstimated EV: +{ev:.2f}%\n"
         f"Fractional Kelly (paper sizing only): {stake:.3f}%\nTarget book: {target_book or 'unknown'}\n"
         f"Sharp books: {', '.join(sorted(sharp_books))}\n"
-        f"Target quote updated: {event.get('commence_time', 'unknown') if False else 'timestamp recorded in ledger'}\n"
+        f"Target quote updated: {target_quote_updated_at or 'unknown'}\n"
         f"Maximum sharp probability spread: {probability_spread_pp:.2f} percentage points\n"
         "--------------------\nResearch alert only — verify the live line before acting."
     )
@@ -546,6 +546,7 @@ def scan_event(event, sent_cache, stats=None):
                     format_alert(
                         event, market_key, name, offered, fair_odds, probability, ev, stake,
                         unique_books, target_book=target_book, probability_spread_pp=spread_pp,
+                        target_quote_updated_at=target_quote_updated_at,
                     )
                 )
                 if delivery is True:
