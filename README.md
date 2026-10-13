@@ -40,7 +40,7 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
 - Added persistent `signals.csv` research logging.
-- Added pre-start CLV snapshots in `clv_snapshots.csv`.
+- Added pre-start CLV snapshots in `clv_snapshots.csv`, benchmarked against the median of fresh sharp-book odds rather than the later 1xBet price.
 - Added paper settlement from completed-event scores in `settle_signals.py`.
 - Added data-integrity validation in `signal_quality.py`.
 - Added performance analytics including ROI, drawdown, losing streak, Brier score, calibration, EV/odds/sport/market breakdowns, and CLV.
@@ -83,18 +83,18 @@ The scanner schedule currently polls every five minutes during the configured UT
 
 ## Data files
 
-- `signals.csv` — every accepted research signal, including event time, price, fair probability, EV, stake percentage, and settlement fields.
-- `clv_snapshots.csv` — pre-start reference-price snapshots and the price-movement CLV calculation.
+- `signals.csv` — every accepted research signal, including a retry-safe signal ID, offered price, probability/EV estimate, source-book provenance, inter-book probability spread, and settlement fields.
+- `clv_snapshots.csv` — pre-start sharp-book consensus snapshots, benchmark-book keys/count, and the price-movement CLV calculation.
 - `sent_alerts_cache.csv` — state used to suppress immaterial repeat alerts.
 - `analysis_report.csv` — generated performance summary and breakdowns.
 
 ### CLV definition
 
-The current CLV metric is a **pre-start reference-price movement proxy**:
+The current CLV metric is a **pre-start sharp-book consensus price-movement measure**:
 
-`CLV % = (signal_odds / reference_odds - 1) * 100`
+`CLV % = (signal_odds / median_fresh_sharp_odds - 1) * 100`
 
-Positive CLV means the later reference price shortened relative to the original signal price. It is useful evidence about price movement, but it is not claimed to be an official exchange/bookmaker closing-line measurement.
+A positive value means the offered signal price was higher than the later median odds from the eligible sharp-book reference set. Snapshots require at least `MIN_SHARP_BOOKS` fresh, unique sharp-book observations for the same market signature. Because the capture window is normally up to ten minutes before kickoff and may not coincide with the final market close, this is not described as an official closing-line measurement.
 
 ## Validation standard
 
