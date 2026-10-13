@@ -136,6 +136,25 @@ def validate_row(row: dict[str, str], row_number: int) -> list[str]:
         if not _valid_timestamp(_text(row, "settled_at")):
             errors.append(f"row {row_number}: settled row requires ISO timestamp settled_at")
 
+        method = _text(row, "settlement_method")
+        if method and method not in {"scores_api", "manual_verified"}:
+            errors.append(f"row {row_number}: invalid settlement_method '{method}'")
+        if signal_id and not method:
+            errors.append(f"row {row_number}: identified settled signal requires settlement_method")
+        if method == "manual_verified":
+            if not _text(row, "settlement_source"):
+                errors.append(f"row {row_number}: manual settlement requires settlement_source")
+            source_url = _text(row, "settlement_source_url")
+            if not source_url.lower().startswith(("http://", "https://")):
+                errors.append(f"row {row_number}: manual settlement requires an http(s) source URL")
+            if not _valid_timestamp(_text(row, "settlement_verified_at")):
+                errors.append(f"row {row_number}: manual settlement requires timezone-aware settlement_verified_at")
+        elif method == "scores_api":
+            if not _text(row, "settlement_source"):
+                errors.append(f"row {row_number}: API settlement requires settlement_source")
+            if not _valid_timestamp(_text(row, "settlement_verified_at")):
+                errors.append(f"row {row_number}: API settlement requires timezone-aware settlement_verified_at")
+
     return errors
 
 
