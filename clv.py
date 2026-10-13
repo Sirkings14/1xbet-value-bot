@@ -12,8 +12,10 @@ from statistics import median
 import requests
 
 from main import (
+    API_BOOKMAKERS,
     MIN_SHARP_BOOKS,
     extract_bookmaker_markets,
+    log_api_quota,
     market_groups,
     market_is_fresh,
     unique_book_snapshots,
@@ -88,9 +90,10 @@ def fetch_sport(sport_key):
         raise RuntimeError("ODDS_API_KEY is not configured")
     response = requests.get(
         f"{ODDS_API_BASE}/sports/{sport_key}/odds/",
-        params={"apiKey": ODDS_API_KEY, "regions": "eu,uk", "markets": "h2h,totals", "oddsFormat": "decimal"},
+        params={"apiKey": ODDS_API_KEY, "bookmakers": ",".join(API_BOOKMAKERS), "markets": "h2h,totals", "oddsFormat": "decimal"},
         timeout=REQUEST_TIMEOUT,
     )
+    log_api_quota(response, f"clv:{sport_key}")
     response.raise_for_status()
     return response.json()
 
