@@ -89,6 +89,14 @@ class ClvTests(unittest.TestCase):
         self.assertAlmostEqual(snapshot["reference_odds"], 2.05)
         self.assertEqual(snapshot["reference_book_count"], 2)
         self.assertEqual(snapshot["reference_book_keys"], "betfair_ex_uk|pinnacle")
+        self.assertEqual(
+            snapshot["reference_book_odds"],
+            "betfair_ex_uk=2.100000|pinnacle=2.000000",
+        )
+        self.assertEqual(
+            snapshot["reference_quote_timestamps"],
+            f"betfair_ex_uk={update_time}|pinnacle={update_time}",
+        )
         self.assertGreater(snapshot["clv_percent"], 0)
 
 
