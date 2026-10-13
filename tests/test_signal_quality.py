@@ -30,6 +30,8 @@ class SignalQualityTests(unittest.TestCase):
 
     def test_signal_provenance_fields_are_validated(self):
         row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
         row.update({
             "signal_id": "a" * 24,
             "target_book": "onexbet",
@@ -44,6 +46,8 @@ class SignalQualityTests(unittest.TestCase):
 
     def test_signal_with_excessive_probability_disagreement_is_rejected(self):
         row = self.valid_row()
+        row["sharp_books"] = "2"
+        row["sharp_sample_count"] = "2"
         row.update({
             "signal_id": "b" * 24,
             "target_book": "onexbet",
@@ -57,6 +61,8 @@ class SignalQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "signals.csv"
             row = self.valid_row()
+            row["sharp_books"] = "2"
+            row["sharp_sample_count"] = "2"
             row.update({
                 "signal_id": "c" * 24,
                 "target_book": "onexbet",
