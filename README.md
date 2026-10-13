@@ -31,6 +31,11 @@ The objective is to measure whether the signal process has a repeatable edge bef
 - Requires at least two complete sharp-book observations for a signal.
 - Keeps different market/line signatures separate so incomplete books are not mixed together.
 - Separates each totals line into its own Over/Under market and rejects incomplete soccer 1X2 outcome sets.
+- Requires a recent market-source timestamp and rejects missing/stale market quotes.
+- Uses at most one observation per sharp bookmaker; duplicate observations from one book are excluded.
+- Rejects signals when sharp-book probability estimates disagree by more than the configurable spread guard.
+- Persists a stable signal ID and source-book provenance before attempting Telegram delivery, with CSV schema migration and retry-safe deduplication.
+- Logs the target bookmaker, sharp-book keys, and inter-book probability spread for later audits.
 - Stable signal IDs no longer include the current 1xBet odds, preventing duplicate signals when prices move.
 - Added request timeouts and HTTP error handling.
 - Rejects malformed, completed, or stale events according to the configured event-age policy.
@@ -54,13 +59,15 @@ The bot is deliberately an **alert and evaluation engine**. It does not log in t
 - `MAX_STAKE_PCT=2.0` percent
 - `KELLY_FRACTION=0.25`
 - `MIN_SHARP_BOOKS=2`
+- `MAX_SHARP_PROB_SPREAD_PP=8.0` (initial heuristic guard; not optimized on outcome data)
+- `MAX_MARKET_AGE_SECONDS=900` (15-minute maximum source-market age)
 - `REQUEST_TIMEOUT=20` seconds
 - `MAX_EVENT_AGE_MINUTES=0` (future events only by default)
 - `RE_ALERT_EV_DELTA=1.0` percentage point
 - `RE_ALERT_ODDS_DELTA=0.05`
 - `CLV_MINUTES_BEFORE_START=10`
 
-These defaults are intentionally conservative. They should be changed only after measured paper-trading evidence supports the change.
+The 8-percentage-point disagreement cap is a configurable initial guardrail, not a validated optimum. The 15-minute quote-age cap follows a conservative market freshness policy. Measure rejection counts and CLV before tuning either setting. These defaults do not establish profitability.
 
 ## GitHub Actions setup
 
